@@ -1,6 +1,9 @@
-# DeepProxy
+# DeepsProxy
 
-Local proxy server that interfaces with DeepSeek using browser automation via Playwright. Provides a REST API for chat interactions and tool execution.
+Local proxy server that interfaces with DeepSeek using browser automation via Playwright.  
+Provides a REST API for chat interactions and tool execution.
+
+---
 
 ## Features
 
@@ -9,84 +12,104 @@ Local proxy server that interfaces with DeepSeek using browser automation via Pl
 - Persistent browser session with login state
 - Built with Hono and TypeScript
 
+---
+
 ## Prerequisites
 
-- Node.js (v20 or later)
+- Node.js v20 or later
 - Playwright browsers
+
+---
 
 ## Installation
 
-bash
+```bash
 npm install
 npx playwright install
+```
 
+---
 
 ## Configuration
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the project root:
 
-env
+```env
 DEEPSEEK_EMAIL=your_email@example.com
 DEEPSEEK_PASSWORD=your_password
 PORT=3000
+```
 
+---
 
 ## Usage
 
-### Login and save session
+### Login and Save Session
 
-bash
+```bash
 npm run login
+```
 
+### Start the Server
 
-### Start the server
-
-bash
+```bash
 npm start
+```
 
+The server runs by default at:
 
-Server runs on `http://localhost:3000` by default.
+```txt
+http://localhost:3000
+```
 
-### Testing
+---
 
-bash
+## Testing
+
+```bash
 npm test
+```
 
+---
 
 ## API Endpoints
 
-### POST `/chat`
+### `POST /chat`
 
 Send a chat message.
 
-**Request body:**
+#### Request Body
 
-
+```json
 {
   "message": "Hello, DeepSeek!",
   "tools": []
 }
+```
 
+#### Response
 
-**Response:**
-
-
+```json
 {
   "response": "...",
   "toolCalls": []
 }
+```
 
+---
 
 ## Development
 
-bash
-npm run test          # Run tests
-npx tsx src/index.ts  # Run directly
+```bash
+npm run test
+npx tsx src/index.ts
+```
 
+---
 
 ## Project Structure
 
-
+```txt
 .
 ├── src/
 │   ├── index.ts           # Server entry
@@ -96,20 +119,33 @@ npx tsx src/index.ts  # Run directly
 │   └── utils/             # Utilities
 ├── dist/                  # Compiled output
 └── deepseek_profile/      # Browser profile storage
+```
 
+---
 
 ## License
 
 ISC
 
+---
+
 # Disclaimer
 
 This project is provided strictly for educational and research purposes.
 
-The authors do not encourage or endorse misuse, unauthorized automation, abuse of third-party services, or violations of any platform Terms of Service.
+The authors do not encourage or endorse:
+
+- Misuse
+- Unauthorized automation
+- Abuse of third-party services
+- Violations of platform Terms of Service
 
 Users are solely responsible for how they use this software, including compliance with applicable laws, regulations, and service agreements.
 
-This repository is intended to demonstrate concepts related to browser automation, session management, and OpenAI-compatible runtime architectures.
+This repository is intended to demonstrate concepts related to:
+
+- Browser automation
+- Session management
+- OpenAI-compatible runtime architectures
 
 Use at your own risk.
