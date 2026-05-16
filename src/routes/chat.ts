@@ -255,11 +255,64 @@ async function parseDeepSeekStreamToOpenAI(
   let completionTokens = 0;
   const toolCalls: ToolCall[] = [];
   let buffer = '';
+  let pendingToolLeadIn = '';
 
   const emitContent = async (text: string) => {
     if (!text || emittedToolCallCount > 0) return;
     content += text;
     if (emit) await emit(makeChunk(completionId, model, { content: text }));
+  };
+
+  const parseRecoverableToolCallBlock = (block: string, openTag: string): any => {
+    try {
+      return parseToolCallBlock(block, openTag, tools);
+    } catch {}
+
+    const args: Record<string, unknown> = {};
+    const closedParameterRe = /<parameter\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/parameter>/gi;
+    let match: RegExpExecArray | null;
+    let lastClosedEnd = 0;
+    while ((match = closedParameterRe.exec(block)) !== null) {
+      args[match[1]] = coerceParameterValue(match[2]);
+      lastClosedEnd = closedParameterRe.lastIndex;
+    }
+
+    const tail = block.substring(lastClosedEnd);
+    const unclosedParameterMatch = tail.match(/<parameter\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*)$/i);
+    if (unclosedParameterMatch) {
+      args[unclosedParameterMatch[1]] = coerceParameterValue(unclosedParameterMatch[2]);
+    }
+
+    if (Object.keys(args).length === 0) throw new Error('Unrecoverable tool call');
+    const toolName = extractToolName(openTag, block) || inferToolNameFromParameters(args, tools);
+    if (!toolName) throw new Error('Recoverable tool call missing name');
+    return { name: toolName, arguments: args };
+  };
+
+  const emitToolCallFromBlock = async (toolBlock: string, openTag: string) => {
+    const toolCallObj = parseRecoverableToolCallBlock(toolBlock, openTag);
+    const toolName = toolCallObj.name || '';
+
+    let toolArgs: Record<string, unknown> = {};
+    if (toolCallObj.arguments && typeof toolCallObj.arguments === 'object') {
+      toolArgs = toolCallObj.arguments;
+    } else {
+      const keys = Object.keys(toolCallObj).filter(k => k !== 'name');
+      for (const k of keys) toolArgs[k] = toolCallObj[k];
+    }
+
+    if (!toolName) throw new Error('Tool call missing name');
+
+    const toolId = 'call_' + uuidv4();
+    const toolCall: ToolCall = {
+      index: emittedToolCallCount,
+      id: toolId,
+      type: 'function',
+      function: { name: toolName, arguments: JSON.stringify(toolArgs) }
+    };
+    toolCalls.push(toolCall);
+    if (emit) await emit(makeChunk(completionId, model, { tool_calls: [toolCall] }));
+    emittedToolCallCount++;
   };
 
   while (true) {
@@ -357,6 +410,7 @@ async function parseDeepSeekStreamToOpenAI(
               // Once a tool call appears, do not emit the lead-in text as
               // assistant content. OpenAI-compatible clients expect the whole
               // assistant turn to be a structured tool_calls message.
+              pendingToolLeadIn += contentEmitBuffer.substring(0, toolOpen.startIdx);
               insideTool = true;
               currentToolOpenTag = toolOpen.openTag;
               contentEmitBuffer = contentEmitBuffer.substring(toolOpen.endIdx);
@@ -378,33 +432,17 @@ async function parseDeepSeekStreamToOpenAI(
 
           const toolBlock = contentEmitBuffer.substring(0, endIdx).trim();
           try {
-            const toolCallObj = parseToolCallBlock(toolBlock, currentToolOpenTag, tools);
-            const toolName = toolCallObj.name || '';
-
-            let toolArgs: Record<string, unknown> = {};
-            if (toolCallObj.arguments && typeof toolCallObj.arguments === 'object') {
-              toolArgs = toolCallObj.arguments;
-            } else {
-              const keys = Object.keys(toolCallObj).filter(k => k !== 'name');
-              for (const k of keys) toolArgs[k] = toolCallObj[k];
-            }
-
-            if (!toolName) throw new Error('Tool call missing name');
-
-            const toolId = 'call_' + uuidv4();
-            const toolCall: ToolCall = {
-              index: emittedToolCallCount,
-              id: toolId,
-              type: 'function',
-              function: { name: toolName, arguments: JSON.stringify(toolArgs) }
-            };
-            toolCalls.push(toolCall);
-            if (emit) await emit(makeChunk(completionId, model, { tool_calls: [toolCall] }));
-            emittedToolCallCount++;
+            await emitToolCallFromBlock(toolBlock, currentToolOpenTag);
+            pendingToolLeadIn = '';
           } catch (e) {
             // Never leak internal tool-call XML to the user-visible content.
-            // If the call cannot be parsed, dropping it is safer than exposing
-            // raw execution markup as assistant text.
+            // If the call cannot be parsed, restore any normal text that came
+            // before it so the OpenAI response is not silently empty.
+            console.warn('[chat] Dropping malformed tool call block:', e);
+            if (emittedToolCallCount === 0 && pendingToolLeadIn.trim().length > 0) {
+              await emitContent(pendingToolLeadIn);
+            }
+            pendingToolLeadIn = '';
           }
 
           insideTool = false;
@@ -414,6 +452,19 @@ async function parseDeepSeekStreamToOpenAI(
       } catch (e) {
         // Ignore partial or malformed DeepSeek chunks.
       }
+    }
+  }
+
+  if (insideTool && contentEmitBuffer.trim().length > 0) {
+    try {
+      await emitToolCallFromBlock(contentEmitBuffer.trim(), currentToolOpenTag);
+      pendingToolLeadIn = '';
+    } catch (e) {
+      console.warn('[chat] Dropping unclosed malformed tool call at end of stream:', e);
+      if (emittedToolCallCount === 0 && pendingToolLeadIn.trim().length > 0) {
+        await emitContent(pendingToolLeadIn);
+      }
+      pendingToolLeadIn = '';
     }
   }
 

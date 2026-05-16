@@ -352,3 +352,75 @@ test('streaming Hermes-style XML tool calls do not leak as content', async () =>
     restore();
   }
 });
+
+test('unclosed Hermes XML tool call at end of stream is recovered instead of returning empty', async () => {
+  const restore = setupFetchMock((url) => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('data: {"p":"response/content","v":"<tool_call name=\\"terminal\\"><parameter name=\\"command\\">adb devices"}\n\n'));
+        c.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        c.close();
+      }
+    });
+    return new Response(stream, { status: 200 });
+  });
+
+  try {
+    const req = new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'liste adb' }],
+        stream: true,
+        tools: [{ type: 'function', function: { name: 'terminal', parameters: { type: 'object', properties: { command: { type: 'string' } } } } }]
+      })
+    });
+
+    const res = await app.fetch(req);
+    const text = await res.text();
+    assert.ok(!text.includes('<tool_call'), 'unclosed tool XML must not leak into SSE content');
+    assert.ok(!text.includes('<parameter'), 'unclosed parameter XML must not leak into SSE content');
+    assert.ok(text.includes('"tool_calls"'), 'Recoverable unclosed XML must emit structured tool_calls');
+    assert.ok(text.includes('adb devices'), 'Recovered tool call must preserve argument text');
+    assert.ok(text.includes('"finish_reason":"tool_calls"'));
+  } finally {
+    restore();
+  }
+});
+
+test('malformed internal tool call with lead-in returns safe content instead of empty response', async () => {
+  const restore = setupFetchMock((url) => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('data: {"p":"response/content","v":"Não encontrei o dispositivo, vou verificar novamente.\\n<tool_call><parameter></parameter></tool_call>"}\n\n'));
+        c.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        c.close();
+      }
+    });
+    return new Response(stream, { status: 200 });
+  });
+
+  try {
+    const req = new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'continue depois de erro adb' }],
+        stream: true,
+        tools: [{ type: 'function', function: { name: 'terminal', parameters: { type: 'object', properties: { command: { type: 'string' } } } } }]
+      })
+    });
+
+    const res = await app.fetch(req);
+    const text = await res.text();
+    assert.ok(!text.includes('<tool_call'), 'malformed tool XML must not leak into SSE content');
+    assert.ok(!text.includes('<parameter'), 'malformed parameter XML must not leak into SSE content');
+    assert.ok(!text.includes('"tool_calls"'), 'unparseable tool call must not be exposed as a fake structured tool call');
+    assert.ok(text.includes('Não encontrei o dispositivo'), 'lead-in content must be preserved as a non-empty fallback');
+    assert.ok(text.includes('"finish_reason":"stop"'));
+  } finally {
+    restore();
+  }
+});
