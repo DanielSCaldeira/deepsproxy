@@ -2,6 +2,8 @@
 
 Proxy API local compatível com OpenAI que roteia requisições para modelos DeepSeek, com integração de automação de navegador via Playwright para execução de ferramentas e interações web.
 
+> **Nota sobre este fork:** este repositório é mantido como um fork com ajustes de compatibilidade para melhorar a interação com agentes de IA, especificamente o Hermes Agent. As alterações priorizam compatibilidade OpenAI-style para fluxos agentivos, incluindo streaming, histórico de mensagens, metadados de contexto e tool calls.
+
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-4.0-green)](https://hono.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.40-blueviolet)](https://playwright.dev/)
