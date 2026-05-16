@@ -24,6 +24,10 @@ test('Models endpoint returns deepseek-v4-flash and deepseek-v4-flash-thinking',
   assert.ok(Array.isArray(body.data));
   assert.ok(body.data.some((m: any) => m.id === 'deepseek-v4-flash'));
   assert.ok(body.data.some((m: any) => m.id === 'deepseek-v4-flash-thinking'));
+  const flash = body.data.find((m: any) => m.id === 'deepseek-v4-flash');
+  assert.strictEqual(typeof flash.context_length, 'number');
+  assert.ok(flash.context_length > 0);
+  assert.strictEqual(typeof flash.max_context_tokens, 'number');
 });
 
 test('Chat Completions endpoint with deepseek-v4-flash-thinking (thinking enabled)', async () => {

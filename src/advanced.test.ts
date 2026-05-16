@@ -18,7 +18,7 @@ function setupFetchMock(handler: (url: string, init?: RequestInit) => Response |
   return () => { globalThis.fetch = originalFetch; };
 }
 
-test('multiturn-thinking-tools: maintains reasoning_content history', async () => {
+test('multiturn-thinking-tools: serializes complete OpenAI message history', async () => {
   let capturedPrompt = '';
 
   const restore = setupFetchMock((url, init) => {
@@ -50,11 +50,14 @@ test('multiturn-thinking-tools: maintains reasoning_content history', async () =
     const res = await app.fetch(req);
     assert.strictEqual(res.status, 200);
 
-    // Validate that only the last message is sent (as requested by user)
-    // In this case, the last message is the tool response
+    // Validate that the complete OpenAI history is sent to DeepSeek. Agents
+    // need the original user request, assistant tool call, and tool result to
+    // produce the post-tool final answer.
+    assert.ok(capturedPrompt.includes('User: hello'), 'Must include original user message');
+    assert.ok(capturedPrompt.includes('Assistant:'), 'Must include assistant history');
+    assert.ok(capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Must include previous thinking');
+    assert.ok(capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Must include previous tool call');
     assert.ok(capturedPrompt.includes('Tool Response (test): success'), 'Must include tool response signature');
-    assert.ok(!capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Should not include previous thinking');
-    assert.ok(!capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Should not include previous tool call');
   } finally {
     restore();
   }
@@ -159,7 +162,7 @@ test('caching-streaming and cache-control: returns prompt_tokens_details', async
   }
 });
 
-test('session-parent-tracking: appends messages using response message_id as parent', async () => {
+test('openai-requests-are-stateless: each request starts a fresh DeepSeek turn', async () => {
   let capturedPayloads: any[] = [];
 
   const restore = setupFetchMock((url, init) => {
@@ -217,9 +220,49 @@ test('session-parent-tracking: appends messages using response message_id as par
     assert.strictEqual(capturedPayloads.length, 2);
     // In Turn 1, parent_message_id should be null (mock-session is fresh)
     assert.strictEqual(capturedPayloads[0].parent_message_id, null);
-    // In Turn 2, parent_message_id should be 1001 (the ID returned in Turn 1)
-    assert.strictEqual(capturedPayloads[1].parent_message_id, 1001, 'Turn 2 should use message_id from Turn 1 as parent');
-    assert.strictEqual(capturedPayloads[1].prompt, 'User: Turn 2\n\n', 'Should only send the last message');
+    // OpenAI chat/completions requests are self-contained; the proxy must not
+    // reuse DeepSeek's previous parent_message_id because compressed or edited
+    // OpenAI histories no longer match the browser-side DeepSeek thread.
+    assert.strictEqual(capturedPayloads[1].parent_message_id, null, 'Turn 2 should start a fresh DeepSeek turn');
+    assert.strictEqual(
+      capturedPayloads[1].prompt,
+      'User: Turn 1\n\nAssistant: Response 1\n\nUser: Turn 2\n\n',
+      'Should send complete message history'
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('non-stream chat completion returns OpenAI JSON instead of SSE', async () => {
+  const restore = setupFetchMock((url) => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode('data: {"p":"response/content","v":"hello"}\n\n'));
+        c.enqueue(new TextEncoder().encode('data: {"p":"response/content","v":" world"}\n\n'));
+        c.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        c.close();
+      }
+    });
+    return new Response(stream, { status: 200 });
+  });
+
+  try {
+    const req = new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'deepseek-v4-flash', messages: [{role: 'user', content: 'test'}], stream: false })
+    });
+
+    const res = await app.fetch(req);
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers.get('Content-Type') || '', /^application\/json/);
+
+    const body = await res.json();
+    assert.strictEqual(body.object, 'chat.completion');
+    assert.strictEqual(body.choices[0].message.role, 'assistant');
+    assert.strictEqual(body.choices[0].message.content, 'hello world');
+    assert.strictEqual(body.choices[0].finish_reason, 'stop');
   } finally {
     restore();
   }

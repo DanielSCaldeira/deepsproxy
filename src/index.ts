@@ -19,6 +19,24 @@ dotenv.config();
 
 export const app = new Hono();
 
+const MODEL_CONTEXT_LENGTH = 64_000;
+
+function modelEntry(id: string) {
+  return {
+    id,
+    object: 'model',
+    created: Math.floor(Date.now() / 1000),
+    owned_by: 'deepseek',
+    permission: [],
+    root: id,
+    parent: null,
+    context_length: MODEL_CONTEXT_LENGTH,
+    max_context_tokens: MODEL_CONTEXT_LENGTH,
+    max_input_tokens: MODEL_CONTEXT_LENGTH,
+    max_output_tokens: 8_000,
+  };
+}
+
 app.use('*', cors());
 
 app.use('*', async (c, next) => {
@@ -44,42 +62,10 @@ app.get('/v1/models', (c) => {
   return c.json({
     object: 'list',
     data: [
-      {
-        id: 'deepseek-v4-flash',
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'deepseek',
-        permission: [],
-        root: 'deepseek-v4-flash',
-        parent: null,
-      },
-      {
-        id: 'deepseek-v4-flash-thinking',
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'deepseek',
-        permission: [],
-        root: 'deepseek-v4-flash-thinking',
-        parent: null,
-      },
-      {
-        id: 'deepseek-v4-pro',
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'deepseek',
-        permission: [],
-        root: 'deepseek-v4-pro',
-        parent: null,
-      },
-      {
-        id: 'deepseek-v4-pro-thinking',
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'deepseek',
-        permission: [],
-        root: 'deepseek-v4-pro-thinking',
-        parent: null,
-      }
+      modelEntry('deepseek-v4-flash'),
+      modelEntry('deepseek-v4-flash-thinking'),
+      modelEntry('deepseek-v4-pro'),
+      modelEntry('deepseek-v4-pro-thinking')
     ]
   });
 });
