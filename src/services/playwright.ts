@@ -72,9 +72,42 @@ export async function getDeepSeekHeaders(forceNew = false): Promise<{ headers: R
     await activePage.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
   }
 
-  // Wait for the textarea
-  await activePage.waitForSelector('textarea', { timeout: 30000 }).catch(() => {
-    throw new Error('Timeout waiting for chat input. Are you logged in?');
+  // Wait for the chat input. Keep this timeout short: when DeepSeek shows an
+  // account/login/suspension banner there is no input, and retrying the same
+  // browser state just makes OpenAI clients look hung.
+  const chatInputSelector = 'textarea, [role="textbox"], [contenteditable="true"]';
+  const chatInputTimeoutMs = Number(process.env.DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS || '8000');
+  await activePage.waitForSelector(chatInputSelector, { timeout: chatInputTimeoutMs }).catch(async () => {
+    const pageState = await activePage!.evaluate(() => {
+      const fullBodyText = document.body?.innerText || '';
+      const bodyText = fullBodyText.slice(0, 5000);
+      const suspensionMatch = fullBodyText.match(/Due to violation of user policies, your account has been suspended until\s+([^\.\n]+)\.\s*If you have any questions, please Contact us\./i);
+      const suspendedUntil = suspensionMatch?.[1]?.trim() || null;
+      const suspensionOriginal = suspensionMatch?.[0]?.trim() || null;
+      return {
+        url: location.href,
+        title: document.title,
+        bodyText,
+        textareaCount: document.querySelectorAll('textarea').length,
+        inputCount: document.querySelectorAll('input, textarea, [role="textbox"], [contenteditable]').length,
+        suspended: /suspended until|violation of user policies|account has been suspended/i.test(fullBodyText),
+        suspendedUntil,
+        suspensionOriginal,
+        loginRequired: /log in|login|sign in|entrar/i.test(fullBodyText),
+      };
+    }).catch((e: any) => ({ evaluateError: e?.message || String(e) }));
+
+    const state: any = pageState;
+    if (state?.suspended) {
+      const until = typeof state.suspendedUntil === 'string' && state.suspendedUntil.trim() ? state.suspendedUntil.trim() : '';
+      const original = typeof state.suspensionOriginal === 'string' && state.suspensionOriginal.trim() ? state.suspensionOriginal.trim() : '';
+      const detail = original || (until ? `Due to violation of user policies, your account has been suspended until ${until}.` : 'DeepSeek reported an account suspension.');
+      throw new Error(`DeepSeek account is suspended; chat input is unavailable. Original DeepSeek message: ${detail}`);
+    }
+    if (state?.loginRequired) {
+      throw new Error('DeepSeek login is required; chat input is unavailable.');
+    }
+    throw new Error('DeepSeek chat input unavailable; page did not expose an input box.');
   });
 
   return new Promise((resolve, reject) => {
