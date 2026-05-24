@@ -426,6 +426,21 @@ export async function chatCompletions(c: Context) {
     });
   } catch (err: any) {
     console.error('Error in chatCompletions:', err);
-    return c.json({ error: { message: err.message } }, 500);
+    const errMessage = err?.message || String(err);
+
+    let status = 500;
+    let code = 'upstream_error';
+    if (/account is suspended/i.test(errMessage)) {
+      status = 403;
+      code = 'deepseek_account_suspended';
+    } else if (/login is required/i.test(errMessage)) {
+      status = 401;
+      code = 'deepseek_login_required';
+    } else if (/chat input unavailable|Timeout waiting for chat input/i.test(errMessage)) {
+      status = 409;
+      code = 'deepseek_chat_unavailable';
+    }
+
+    return c.json({ error: { message: errMessage, type: code, code } }, status as any);
   }
 }
