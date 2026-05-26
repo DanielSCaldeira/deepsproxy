@@ -1,21 +1,12 @@
-/*
- * File: deepseek.ts
- * Project: deepsproxy
- * Author: Pedro Farias
- * Created: 2026-05-09
- * 
- * Last Modified: Sat May 09 2026
- * Modified By: Pedro Farias
- */
+import { getDeepSeekHeaders, DeepSeekHeaders } from './playwright.ts';
+import { createLogger } from '../utils/logger.ts';
 
-import { getDeepSeekHeaders } from './playwright.ts';
+const log = createLogger('deepseek');
 
-// In-memory state to track the last message ID per session to avoid overwriting
-// Use globalThis to ensure it survives module reloads in some test environments
 const sessionStates: Record<string, number | null> = (globalThis as any)._sessionStates || {};
 (globalThis as any)._sessionStates = sessionStates;
 
-export function updateSessionParent(sessionId: string, parentId: number | null) {
+export function updateSessionParent(sessionId: string, parentId: number | null): void {
   if (sessionId) {
     sessionStates[sessionId] = parentId;
   }
@@ -32,22 +23,46 @@ export interface DeepSeekPayload {
   preempt: boolean;
 }
 
+export interface DeepSeekStreamResult {
+  stream: ReadableStream;
+  headers: DeepSeekHeaders;
+  uiSessionId: string;
+}
+
+const DEEPSEEK_CHAT_URL = 'https://chat.deepseek.com/api/v0/chat/completion';
+
+function buildRequestHeaders(headers: DeepSeekHeaders): Record<string, string> {
+  const appVersion = process.env.DEEPSEEK_APP_VERSION || '2.0.0';
+  const clientVersion = process.env.DEEPSEEK_CLIENT_VERSION || appVersion;
+  const clientLocale = process.env.DEEPSEEK_CLIENT_LOCALE || 'pt_BR';
+  const acceptLanguage = process.env.DEEPSEEK_ACCEPT_LANGUAGE || 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7';
+
+  return {
+    accept: '*/*',
+    'accept-language': acceptLanguage,
+    authorization: headers.authorization,
+    'content-type': 'application/json',
+    origin: 'https://chat.deepseek.com',
+    cookie: headers.cookie,
+    'x-ds-pow-response': headers['x-ds-pow-response'],
+    'x-hif-dliq': headers['x-hif-dliq'],
+    'x-hif-leim': headers['x-hif-leim'],
+    'x-app-version': appVersion,
+    'x-client-locale': clientLocale,
+    'x-client-platform': 'web',
+    'x-client-version': clientVersion,
+  };
+}
+
 export async function createDeepSeekStream(
   prompt: string,
   enableThinking: boolean,
   isProModel: boolean = false,
   forcedParentId?: number | null
-): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
-  // Obtain fresh headers/PoW from Playwright
-  // If forcedParentId is null, it means we are explicitly starting a new session
+): Promise<DeepSeekStreamResult> {
   const { headers, chatSessionId, parentMessageId } = await getDeepSeekHeaders(forcedParentId === null);
 
-  // Determine the actual parent ID:
-  // 1. If forcedParentId is provided (even if null), use it.
-  // 2. If tracked parent ID is available for this session, use it.
-  // 3. Fallback to Playwright's state.
   let actualParentId: number | null = parentMessageId;
-  
   if (forcedParentId !== undefined) {
     actualParentId = forcedParentId;
   } else if (chatSessionId && sessionStates[chatSessionId] !== undefined) {
@@ -58,30 +73,25 @@ export async function createDeepSeekStream(
     chat_session_id: chatSessionId || undefined,
     parent_message_id: actualParentId,
     model_type: isProModel ? 'expert' : null,
-    prompt: prompt,
+    prompt,
     ref_file_ids: [],
     thinking_enabled: enableThinking,
     search_enabled: true,
-    preempt: false
+    preempt: false,
   };
 
-  const response = await fetch('https://chat.deepseek.com/api/v0/chat/completion', {
+  log.debug('Dispatching DeepSeek request', {
+    sessionId: chatSessionId || '(new)',
+    parentId: actualParentId,
+    promptChars: prompt.length,
+    thinking: enableThinking,
+    pro: isProModel,
+  });
+
+  const response = await fetch(DEEPSEEK_CHAT_URL, {
     method: 'POST',
-    headers: {
-      'accept': '*/*',
-      'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      'authorization': headers['authorization'],
-      'content-type': 'application/json',
-      'origin': 'https://chat.deepseek.com',
-      'x-ds-pow-response': headers['x-ds-pow-response'],
-      'x-hif-dliq': headers['x-hif-dliq'],
-      'x-hif-leim': headers['x-hif-leim'],
-      'x-app-version': '2.0.0',
-      'x-client-locale': 'pt_BR',
-      'x-client-platform': 'web',
-      'x-client-version': '2.0.0'
-    },
-    body: JSON.stringify(payload)
+    headers: buildRequestHeaders(headers),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok || !response.body) {

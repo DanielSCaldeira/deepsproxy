@@ -1,388 +1,153 @@
 # DeepsProxy
 
-Proxy API local compatível com OpenAI que roteia requisições para modelos DeepSeek, com integração de automação de navegador via Playwright para execução de ferramentas e interações web.
+Proxy local compatível com a API OpenAI que roteia requisições para o DeepSeek via automação de navegador (Playwright). Esta é uma fork endurecida do projeto original com foco em concorrência, segurança e operabilidade.
 
-
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
-[![Hono](https://img.shields.io/badge/Hono-4.0-green)](https://hono.dev/)
-[![Playwright](https://img.shields.io/badge/Playwright-1.40-blueviolet)](https://playwright.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)](https://www.typescriptlang.org/)
+[![Hono](https://img.shields.io/badge/Hono-4-green)](https://hono.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.59-blueviolet)](https://playwright.dev/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](LICENSE)
 
 ---
 
-## ✨ Features
+## ✨ Recursos
 
-- **OpenAI API Compatible**: Interface compatível com `/v1/chat/completions` e `/v1/models`
-- **Tool Execution**: Sistema de ferramentas executáveis via Playwright
-- **Session Persistence**: Login persistente com armazenamento de perfil do navegador
-- **Authentication**: Suporte opcional a API Key via header `Authorization` ou `X-API-Key`
-- **Type-Safe**: Código 100% TypeScript com strict mode
-- **Docker Ready**: Deploy simplificado com Docker Compose
+- **OpenAI API compatible**: `/v1/chat/completions` (stream e non-stream) + `/v1/models`
+- **Tool calling**: parser tolerante de `<tool_call>` em JSON e formato XML estilo Hermes
+- **Streaming SSE** correto, com extração de `reasoning_content` para modelos thinking
+- **Compressão de contexto** automática quando o histórico excede o limite detectado do modelo
+- **Telemetria de context window persistida** — descobre o limite real do modelo na primeira execução e relembra entre restarts
+- **Concorrência segura**: mutex serializa o uso da página Playwright para múltiplas requests simultâneas
+- **Fail-closed por padrão**: sem `API_KEY` o servidor faz bind apenas em `127.0.0.1` (e recusa subir se `BIND_HOST` for público)
+- **Logs estruturados com sanitização** de headers sensíveis (`Authorization`, `Cookie`, PoW)
 
 ---
 
 ## 🏗️ Arquitetura
 
-```mermaid
-graph TD
-    Client[Cliente OpenAI/SDK] -->|HTTPS| Proxy[DeepsProxy]
-    Proxy -->|/v1/chat/completions| Handler[Chat Handler]
-    Handler --> DeepSeek[DeepSeek API]
-    Handler --> Playwright[Playwright Service]
-    Playwright --> Browser[Navegador Headless]
-    Handler --> Tools[Tools Executor]
-    Tools --> Registry[Tool Registry]
-    
-    subgraph "Configuração"
-        Env[.env] --> Proxy
-        Profile[deepseek_profile/] --> Playwright
-    end
+```
+src/
+├── index.ts                 # Bootstrap Hono + auth middleware + bind policy
+├── login.ts                 # Sessão headed para login interativo
+├── routes/
+│   ├── chat.ts              # Orquestração de retry/stream/non-stream
+│   ├── serialization.ts     # OpenAI messages → prompt textual
+│   ├── tool-parser.ts       # Parser <tool_call> (JSON e XML/parameter)
+│   └── stream.ts            # Parse do stream DeepSeek → chunks OpenAI
+├── services/
+│   ├── playwright.ts        # BrowserContext + mutex + captura PoW
+│   ├── deepseek.ts          # Cliente HTTP DeepSeek (headers de versão via env)
+│   └── telemetry.ts         # Detecção/persistência do context window
+├── tools/
+│   ├── registry.ts, executor.ts, schema.ts, types.ts
+├── runtime/
+│   ├── engine.ts, types.ts  # State machine agentic loop
+└── utils/
+    ├── logger.ts            # Logger central com redactor de headers
+    ├── mutex.ts             # Lock cooperativo simples
+    ├── compression.ts       # Truncamento progressivo de histórico
+    ├── json.ts              # Parser JSON tolerante a respostas LLM
+    └── types.ts             # Tipos OpenAI
 ```
 
 ---
 
-## 📋 Pré-requisitos
-
-| Dependência | Versão Mínima | Instalação |
-|------------|--------------|-----------|
-| Node.js | v20.x | [nvm](https://github.com/nvm-sh/nvm) |
-| npm | v9.x | Incluído com Node.js |
-| Playwright | - | `npx playwright install` |
-| Docker (opcional) | v24.x | [Docker Docs](https://docs.docker.com/get-docker/) |
-
----
-
-## 🚀 Instalação
-
-### Via npm
+## 🚀 Início rápido
 
 ```bash
-# Clonar repositório
-git clone https://github.com/pedrofariasx/deepsproxy.git
+git clone <repo>
 cd deepsproxy
-
-# Instalar dependências
 npm install
+npx playwright install chromium
 
-# Instalar browsers do Playwright
-npx playwright install
+# 1) Fazer login (abre browser real, você loga manualmente)
+npm run login
+
+# 2) Subir o proxy
+PORT=3000 npm start
 ```
 
-### Via Docker
+O proxy fica em `http://127.0.0.1:3000/v1/chat/completions`. Teste com qualquer SDK OpenAI:
 
 ```bash
-# Build da imagem
-docker-compose build
-
-# Iniciar containers
-docker-compose up -d
-```
-
----
-
-## ⚙️ Configuração
-
-Crie o arquivo `.env` na raiz do projeto:
-
-```env
-# Porta do servidor (default: 3000)
-PORT=3000
-
-# Chave de API para proteger endpoints (opcional)
-API_KEY=sua-chave-secreta-aqui
-
-# Configurações Playwright
-PLAYWRIGHT_HEADLESS=true
-PLAYWRIGHT_TIMEOUT=30000
-
-# Logging
-LOG_LEVEL=info
-```
-
-### Variáveis de Ambiente
-
-| Variável | Descrição | Default | Obrigatória |
-|----------|-----------|---------|------------|
-| `PORT` | Porta HTTP do servidor | `3000` | Não |
-| `API_KEY` | Chave para autenticação de requests | - | Não |
-| `PLAYWRIGHT_HEADLESS` | Executar browser em modo headless | `true` | Não |
-| `PLAYWRIGHT_TIMEOUT` | Timeout para operações do Playwright (ms) | `30000` | Não |
-
-\* Necessária para funcionalidades que requerem acesso à API DeepSeek
-
----
-
-## 🔐 Autenticação
-
-Se `API_KEY` estiver configurada, todas as requisições devem incluir uma das opções:
-
-```bash
-# Via Bearer Token
-curl -H "Authorization: Bearer sua-chave" http://localhost:3000/v1/chat/completions
-
-# Via X-API-Key header
-curl -H "X-API-Key: sua-chave" http://localhost:3000/v1/chat/completions
-```
-
-Resposta para autenticação falha:
-```json
-{ "error": "Unauthorized" }
-```
-Status: `401`
-
----
-
-## 📡 API Reference
-
-### Health Check
-
-```http
-GET /health
-```
-
-**Response** `200 OK`:
-```json
-{ "status": "ok" }
-```
-
----
-
-### List Models
-
-```http
-GET /v1/models
-```
-
-**Response** `200 OK`:
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "deepseek-v4-flash",
-      "object": "model",
-      "created": 1715616000,
-      "owned_by": "deepseek"
-    },
-    {
-      "id": "deepseek-v4-flash-thinking",
-      "object": "model",
-      "created": 1715616000,
-      "owned_by": "deepseek"
-    },
-    {
-      "id": "deepseek-v4-pro",
-      "object": "model",
-      "created": 1715616000,
-      "owned_by": "deepseek"
-    },
-    {
-      "id": "deepseek-v4-pro-thinking",
-      "object": "model",
-      "created": 1715616000,
-      "owned_by": "deepseek"
-    }
-  ]
-}
-```
-
----
-
-### Chat Completions
-
-```http
-POST /v1/chat/completions
-Content-Type: application/json
-```
-
-**Request Body**:
-```json
-{
-  "model": "deepseek-flash-thinking",
-  "messages": [
-    { "role": "user", "content": "Qual é a previsão do tempo?" }
-  ],
-  "tools": [
-    {
-      "type": "function",
-      "function": {
-        "name": "get_weather",
-        "description": "Obter previsão do tempo",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "location": { "type": "string" }
-          },
-          "required": ["location"]
-        }
-      }
-    }
-  ],
-  "tool_choice": "auto",
-  "stream": false
-}
-```
-
-**Response** `200 OK`:
-```json
-{
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion",
-  "created": 1715616000,
-  "model": "deepseek-flash-thinking",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "A previsão para São Paulo é de 24°C com sol.",
-        "tool_calls": []
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 45,
-    "completion_tokens": 23,
-    "total_tokens": 68
-  }
-}
-```
-
----
-
-## 💻 Exemplos de Uso
-
-### cURL
-
-```bash
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
+curl http://127.0.0.1:3000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
   -d '{
-    "model": "deepseek-flash-thinking",
-    "messages": [{"role": "user", "content": "Olá!"}]
+    "model": "deepseek-v4-flash",
+    "messages": [{"role": "user", "content": "Oi"}],
+    "stream": true
   }'
 ```
 
-### OpenAI SDK (Node.js)
+---
 
-```typescript
-import OpenAI from 'openai';
+## 🔐 Política de bind e auth
 
-const openai = new OpenAI({
-  baseURL: 'http://localhost:3000/v1',
-  apiKey: process.env.API_KEY || 'sk-no-key-required'
-});
+Diferente do original, este fork **falha fechado** quando `API_KEY` não está definida.
 
-const completion = await openai.chat.completions.create({
-  model: 'deepseek-thinking',
-  messages: [{ role: 'user', content: 'Explique TypeScript' }]
-});
+| `API_KEY` | `BIND_HOST` | Comportamento |
+|-----------|-------------|---------------|
+| definida  | qualquer    | Sobe normalmente; toda request precisa de `Authorization: Bearer <key>` ou `X-API-Key`. |
+| **não definida** | não definido | Sobe em `127.0.0.1` com aviso loud no log. |
+| **não definida** | `127.0.0.1` ou `localhost` | Sobe em loopback com aviso loud. |
+| **não definida** | `0.0.0.0` ou IP público | **Recusa subir** (`exit 2`). |
 
-console.log(completion.choices[0].message.content);
-```
+Geração rápida de chave:
 
-### Python (openai library)
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:3000/v1",
-    api_key="sk-no-key-required"
-)
-
-response = client.chat.completions.create(
-    model="deepseek-thinking",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-
-print(response.choices[0].message.content)
+```bash
+openssl rand -hex 32
 ```
 
 ---
 
-## 🔧 Comandos Disponíveis
+## ⚙️ Variáveis de ambiente
 
-| Comando | Descrição |
-|---------|-----------|
-| `npm start` | Inicia o servidor em produção |
-| `npm run dev` | Inicia com hot-reload para desenvolvimento |
-| `npm run login` | Executa fluxo de login e salva sessão do navegador |
-| `npm test` | Executa suite de testes |
-| `npm run build` | Compila TypeScript para `dist/` |
-| `npx playwright install` | Instala browsers para automação |
+Veja `.env.example` para a lista completa. As mais relevantes:
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `PORT` | `3000` | Porta HTTP |
+| `BIND_HOST` | `127.0.0.1` (sem API_KEY) ou `0.0.0.0` | Host de bind |
+| `API_KEY` | — | Chave obrigatória se `BIND_HOST` for público |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `PLAYWRIGHT_HEADLESS` | `true` | `false` apenas para debugging |
+| `DEEPSEEK_PROFILE_DIR` | `deepseek_profile` | Pasta do perfil persistente do Chromium |
+| `DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS` | `8000` | Tempo limite p/ aparecer o input do chat |
+| `DEEPSPROXY_POW_TIMEOUT_MS` | `30000` | Tempo limite p/ capturar PoW |
+| `DEEPSPROXY_MAX_ATTEMPTS` | `3` | Retries por request |
+| `DEEPSPROXY_RETRY_DELAY_MS` | `1000` | Backoff entre tentativas |
+| `DEEPSPROXY_TELEMETRY_FILE` | `<profile>/.telemetry.json` | Onde a telemetria persiste |
+| `DEEPSPROXY_DISABLE_TELEMETRY_PERSIST` | `0` | `1` desliga a persistência |
+| `DEEPSEEK_APP_VERSION` | `2.0.0` | Header `x-app-version` enviado ao DeepSeek |
+| `DEEPSEEK_CLIENT_VERSION` | igual a `APP_VERSION` | Header `x-client-version` |
+| `DEEPSEEK_CLIENT_LOCALE` | `pt_BR` | Header `x-client-locale` |
+| `DEEPSEEK_ACCEPT_LANGUAGE` | `pt-BR,...` | Header `accept-language` |
+| `DEEPSEEK_USER_AGENT` | Chrome 130 desktop | UA do Chromium embarcado |
 
 ---
 
-## 📁 Estrutura do Projeto
+## 🛡️ Hardening — o que mudou em relação ao original
 
-```
-deepsproxy/
-├── src/
-│   ├── index.ts              # Entry point: servidor Hono + middleware
-│   ├── routes/
-│   │   └── chat.ts          # Handler POST /v1/chat/completions
-│   ├── services/
-│   │   ├── deepseek.ts      # Cliente API DeepSeek
-│   │   └── playwright.ts    # Gerenciamento de browser/session
-│   ├── tools/
-│   │   ├── executor.ts      # Execução dinâmica de ferramentas
-│   │   ├── registry.ts      # Registro e descoberta de tools
-│   │   ├── schema.ts        # Validação de schemas JSON
-│   │   └── types.ts         # Tipos do sistema de tools
-│   ├── runtime/
-│   │   ├── engine.ts        # Motor principal de execução
-│   │   └── types.ts         # Tipos do runtime
-│   ├── types/
-│   │   └── openai.ts        # Tipos compatíveis com OpenAI API
-│   ├── utils/
-│   │   └── types.ts         # Utilitários de tipo
-│   ├── login.ts             # Script de autenticação inicial
-│   ├── index.test.ts        # Testes unitários básicos
-│   └── advanced.test.ts     # Testes de integração avançados
-├── docker-compose.yml        # Orquestração multi-container
-├── Dockerfile                # Imagem Docker otimizada
-├── tsconfig.json            # Configuração TypeScript strict
-├── package.json             # Dependências e scripts
-├── .env.example             # Template de variáveis de ambiente
-└── deepseek_profile/        # Armazenamento de sessão (gitignored)
-```
+| Problema no original | Como foi resolvido aqui |
+|---|---|
+| Singleton `activePage` global — duas requests simultâneas se atropelavam | `Mutex` em `utils/mutex.ts` serializa o acesso ao Playwright (`getDeepSeekHeaders` agora é seguro sob concorrência) |
+| `API_KEY` opcional silenciosa — proxy ficava aberto se a env vazasse | Bind padrão em loopback sem API_KEY; recusa subir em IP público sem ela |
+| Telemetria em `globalThis` perdida a cada restart | Persistida em `<profile>/.telemetry.json` com escrita atômica e debounce de 1s |
+| `chat.ts` com 715 linhas misturando tudo | Quebrado em `serialization.ts` + `tool-parser.ts` + `stream.ts` + `chat.ts` (orquestração apenas) |
+| `console.log` espalhado, risco de logar `cookie`/`authorization` | Logger central em `utils/logger.ts` com `redactHeaders()`; nenhum `console.log` direto fora desse módulo |
+| `x-app-version: 2.0.0` hardcoded | Configurável via `DEEPSEEK_APP_VERSION` / `DEEPSEEK_CLIENT_VERSION` |
+| `start-deepsproxy.sh` com paths absolutos `/root/.hermes/...` específicos do autor | Removido — use `npm start` ou `docker compose up` |
+| Cabeçalhos `Author/Created/Last Modified` mentirosos em todo arquivo | Removidos; o git já cuida disso |
+| `version: '3.8'` no docker-compose (obsoleto) | Removido; expõe apenas em loopback por padrão |
 
 ---
 
 ## 🐳 Docker
 
-### docker-compose.yml
-
-```yaml
-services:
-  deepsproxy:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-      - PLAYWRIGHT_HEADLESS=true
-    volumes:
-      - ./deepseek_profile:/app/deepseek_profile
-    restart: unless-stopped
-```
-
-### Build e Execução
+O `docker-compose.yml` exige `API_KEY` no environment do host (ou em um `.env` ao lado), e expõe a porta apenas em `127.0.0.1` por padrão.
 
 ```bash
-# Build
-docker-compose build
-
-# Executar em background
-docker-compose up -d
-
-# Ver logs
-docker-compose logs -f
-
-# Parar
-docker-compose down
+API_KEY=$(openssl rand -hex 32) docker compose up -d
+docker compose logs -f
 ```
 
 ---
@@ -390,89 +155,27 @@ docker-compose down
 ## 🧪 Testes
 
 ```bash
-# Executar todos os testes
-npm test
+# Mock de Playwright já é ligado pelo próprio teste
+npx tsx --test src/advanced.test.ts
 
-# Executar com watch mode
-npm run test:watch
-
-# Executar testes específicos
-npm test -- src/index.test.ts
-
-# Coverage report
-npm run test:coverage
+# Tests do bootstrap (mock via env)
+TEST_MOCK_PLAYWRIGHT=true npx tsx --test src/index.test.ts
 ```
 
----
-
-## 🔍 Troubleshooting
-
-### Playwright não inicializa
-
-```bash
-# Reinstalar browsers
-npx playwright install --with-deps
-
-# Verificar dependências do sistema
-npx playwright install-deps
-```
-
-### Erro de autenticação
-
-- Verifique se `API_KEY` no `.env` corresponde ao header enviado
-- Teste sem `API_KEY` configurada para isolar o problema
-
-### Timeout em requests
-
-- Aumente `PLAYWRIGHT_TIMEOUT` no `.env`
-- Verifique conectividade com a API DeepSeek
-- Considere executar com `PLAYWRIGHT_HEADLESS=false` para debug visual
-
-### Sessão não persiste
-
-- Certifique-se que `deepseek_profile/` tem permissões de escrita
-- Execute `npm run login` para renovar a sessão
-
----
-
-## 🤝 Contribuindo
-
-1. Fork o repositório
-2. Crie uma branch para sua feature: `git checkout -b feature/minha-feature`
-3. Commit suas mudanças: `git commit -m 'feat: adiciona minha feature'`
-4. Push para a branch: `git push origin feature/minha-feature`
-5. Abra um Pull Request
-
-### Guidelines de Código
-
-- Siga o padrão TypeScript strict
-- Adicione testes para novas funcionalidades
-- Mantenha compatibilidade com OpenAI API spec
-
----
-
-## 📄 License
-
-Distribuído sob licença ISC. Veja `LICENSE` para mais informações.
+O teste de integração real (`Chat Completions endpoint with deepseek-v4-flash-thinking`) requer um perfil logado e conectividade com `chat.deepseek.com`.
 
 ---
 
 ## ⚠️ Disclaimer
 
-> Este projeto é fornecido estritamente para fins educacionais e de pesquisa.
+Este projeto automatiza uma UI web de terceiros e usa flags de Chromium que mascaram a automação. Isso **viola os Termos de Serviço do DeepSeek** e pode levar à suspensão da sua conta (o código inclusive detecta esse estado e retorna `403 deepseek_account_suspended`).
 
-Os autores não incentivam ou endossam:
-- Uso indevido ou malicioso
-- Automação não autorizada de serviços terceiros
-- Violação de Termos de Serviço de plataformas
-- Atividades que violem leis ou regulamentações aplicáveis
+Use estritamente para **estudo, pesquisa pessoal ou ambientes de testes próprios**. Para qualquer uso minimamente sério, use a **API oficial paga do DeepSeek** — toda a arquitetura deste projeto (tool calling, agentic loop, OpenAI compat, schema validation) é reaproveitável trocando apenas o transport.
 
-Usuários são integralmente responsáveis pelo uso deste software, incluindo conformidade com leis, regulamentos e contratos de serviço aplicáveis.
+Você é responsável pelo seu uso. Sem garantia de funcionamento — a UI do DeepSeek muda frequentemente.
 
-Este repositório demonstra conceitos relacionados a:
-- Automação de navegadores com Playwright
-- Gerenciamento de sessões e autenticação
-- Arquiteturas de runtime compatíveis com OpenAI
-- Padrões de proxy e roteamento de API
+---
 
-**Use por sua conta e risco.**
+## 📄 Licença
+
+ISC. Veja [LICENSE](LICENSE).

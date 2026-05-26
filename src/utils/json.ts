@@ -1,9 +1,3 @@
-/*
- * File: json.ts
- * Project: deepsproxy
- * Robust JSON parsing utilities
- */
-
 export function robustParseJSON(str: string): any {
   let sanitized = str.trim();
   

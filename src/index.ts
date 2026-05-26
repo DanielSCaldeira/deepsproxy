@@ -1,22 +1,18 @@
-/*
- * File: index.ts
- * Project: deepsproxy
- * Author: Pedro Farias
- * Created: 2026-05-09
- * 
- * Last Modified: Sat May 09 2026
- * Modified By: Pedro Farias
- */
-
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { chatCompletions } from './routes/chat.ts';
+import { swaggerUI } from '@hono/swagger-ui';
 import * as dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { chatCompletions } from './routes/chat.ts';
 import { initPlaywright } from './services/playwright.ts';
 import { getContextLength } from './services/telemetry.ts';
+import { createLogger } from './utils/logger.ts';
+import { openApiSpec } from './openapi.ts';
 
 dotenv.config();
+
+const log = createLogger('server');
 
 export const app = new Hono();
 
@@ -39,6 +35,9 @@ function modelEntry(id: string) {
 
 app.use('*', cors());
 
+app.get('/openapi.json', (c) => c.json(openApiSpec));
+app.get('/docs', swaggerUI({ url: '/openapi.json' }));
+
 app.use('*', async (c, next) => {
   const apiKey = process.env.API_KEY;
   if (apiKey) {
@@ -52,10 +51,8 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Basic health check
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
-// OpenAI compatible routes
 app.post('/v1/chat/completions', chatCompletions);
 
 app.get('/v1/models', (c) => {
@@ -65,26 +62,65 @@ app.get('/v1/models', (c) => {
       modelEntry('deepseek-v4-flash'),
       modelEntry('deepseek-v4-flash-thinking'),
       modelEntry('deepseek-v4-pro'),
-      modelEntry('deepseek-v4-pro-thinking')
-    ]
+      modelEntry('deepseek-v4-pro-thinking'),
+    ],
   });
 });
 
-// Initialize playwright when server starts
-import { fileURLToPath } from 'url';
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+function isLoopback(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host.toLowerCase());
+}
+
+interface BindDecision {
+  host: string;
+  port: number;
+}
+
+function resolveBindDecision(): BindDecision {
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const hasApiKey = !!process.env.API_KEY;
+  const explicitHost = process.env.BIND_HOST;
+
+  if (explicitHost) {
+    if (!hasApiKey && !isLoopback(explicitHost)) {
+      log.error(
+        'Refusing to start: BIND_HOST is non-loopback and API_KEY is not set. ' +
+          'Either set API_KEY or use BIND_HOST=127.0.0.1.',
+        { bindHost: explicitHost }
+      );
+      process.exit(2);
+    }
+    if (!hasApiKey) {
+      log.warn('API_KEY not set — proxy accessible without auth on loopback only', { bindHost: explicitHost });
+    }
+    return { host: explicitHost, port };
+  }
+
+  if (!hasApiKey) {
+    log.warn(
+      'API_KEY not set — defaulting to loopback (127.0.0.1). ' +
+        'To expose externally, set API_KEY and BIND_HOST=0.0.0.0.'
+    );
+    return { host: '127.0.0.1', port };
+  }
+
+  return { host: '0.0.0.0', port };
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  initPlaywright().then(() => {
-    console.log('Playwright initialized.');
-    const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-    console.log(`Server is running on port ${port}`);
+  const headless = process.env.PLAYWRIGHT_HEADLESS !== 'false';
+  const bind = resolveBindDecision();
 
-    serve({
-      fetch: app.fetch,
-      port
+  initPlaywright(headless)
+    .then(() => {
+      log.info('Playwright initialized');
+      log.info('Server starting', { host: bind.host, port: bind.port });
+      serve({ fetch: app.fetch, port: bind.port, hostname: bind.host });
+    })
+    .catch((err: any) => {
+      log.error('Failed to initialize playwright', { error: err?.message || String(err) });
+      process.exit(1);
     });
-  }).catch((err: any) => {
-    console.error('Failed to initialize playwright:', err);
-    process.exit(1);
-  });
 }

@@ -1,10 +1,7 @@
-/*
- * File: compression.ts
- * Project: deepsproxy
- * Utility to compress OpenAI message history to fit a targeted character limit.
- */
-
 import { Message } from './types.ts';
+import { createLogger } from './logger.ts';
+
+const log = createLogger('compression');
 
 /**
  * Compresses the messages list to ensure the resulting serialized prompt length 
@@ -23,7 +20,7 @@ export function compressMessages(
     return messages;
   }
 
-  console.log(`[Compression] Prompt length ${totalLength} exceeds target limit of ${targetLimit}. Starting compression...`);
+  log.info('Compressing prompt', { totalLength, targetLimit });
 
   // Copy messages to avoid mutation
   let compressed = messages.map(msg => ({ ...msg }));
@@ -47,7 +44,7 @@ export function compressMessages(
     totalLength = (serialized.systemPrompt ? serialized.systemPrompt.length + 1 : 0) + serialized.prompt.length;
 
     if (totalLength <= targetLimit) {
-      console.log(`[Compression] Compression succeeded by removing older history. New length: ${totalLength}`);
+      log.info('Compression succeeded by dropping older history', { newLength: totalLength });
       return compressed;
     }
   }
@@ -65,7 +62,7 @@ export function compressMessages(
         serialized = serializeFn(compressed);
         totalLength = (serialized.systemPrompt ? serialized.systemPrompt.length + 1 : 0) + serialized.prompt.length;
         if (totalLength <= targetLimit) {
-          console.log(`[Compression] Compression succeeded by truncating long message. New length: ${totalLength}`);
+          log.info('Compression succeeded by truncating long message', { newLength: totalLength });
           return compressed;
         }
       }
@@ -89,6 +86,6 @@ export function compressMessages(
     }
   }
 
-  console.log(`[Compression] Compression finished. Final length: ${totalLength}`);
+  log.info('Compression finished', { finalLength: totalLength });
   return compressed;
 }

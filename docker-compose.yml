@@ -1,12 +1,19 @@
-version: '3.8'
 services:
   deepsproxy:
     build: .
+    # Bind only to localhost on the host by default. If you intentionally want
+    # the proxy reachable from other machines, change to "3000:3000" AND set a
+    # strong API_KEY below — the proxy refuses to start with BIND_HOST=0.0.0.0
+    # when API_KEY is empty.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - PORT=3000
-      - API_KEY=sua_api_key_aqui
+      - BIND_HOST=0.0.0.0
+      # REQUIRED when binding to 0.0.0.0. Generate with: openssl rand -hex 32
+      - API_KEY=${API_KEY:?Set API_KEY in your shell or .env before starting}
+      - PLAYWRIGHT_HEADLESS=true
+      - LOG_LEVEL=info
     volumes:
       - ./deepseek_profile:/app/deepseek_profile
     restart: unless-stopped
