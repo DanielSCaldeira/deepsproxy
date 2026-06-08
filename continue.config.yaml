@@ -1,0 +1,34 @@
+name: DeepsProxy
+version: 1.0.0
+schema: v1
+
+models:
+  - name: LOCALHOST:3000 - DeepsProxy Flash
+    provider: openai
+    model: deepseek-v4-flash
+    apiBase: http://127.0.0.1:3000/v1
+    apiKey: local
+    capabilities:
+      - tool_use
+    defaultCompletionOptions:
+      contextLength: 8000
+      maxTokens: 4000
+    roles:
+      - chat
+      - edit
+      - apply
+
+  - name: LOCALHOST:3000 - DeepsProxy Thinking
+    provider: openai
+    model: deepseek-v4-flash-thinking
+    apiBase: http://127.0.0.1:3000/v1
+    apiKey: local
+    capabilities:
+      - tool_use
+    defaultCompletionOptions:
+      contextLength: 64000
+      maxTokens: 4000
+    roles:
+      - chat
+      - edit
+      - apply

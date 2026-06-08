@@ -11,7 +11,8 @@ export interface ModelTelemetry {
 }
 
 const DEFAULT_CONTEXT_CHARACTERS = 64_000 * 3.5;
-const MIN_CONTEXT_CHARACTERS = 50 * 3.5;
+const MIN_CONTEXT_TOKENS = 8_000;
+const MIN_CONTEXT_CHARACTERS = MIN_CONTEXT_TOKENS * 3.5;
 const PERSIST_DEBOUNCE_MS = 1000;
 
 const telemetryStore: Record<string, ModelTelemetry> = {};
@@ -42,11 +43,11 @@ function loadFromDisk(): void {
           typeof stats.maxSuccessSize === 'number' &&
           typeof stats.minFailureSize === 'number'
         ) {
-          telemetryStore[model] = {
+          telemetryStore[model] = normalizeTelemetry({
             detectedLimit: stats.detectedLimit,
             maxSuccessSize: stats.maxSuccessSize,
             minFailureSize: stats.minFailureSize === null ? Infinity : stats.minFailureSize,
-          };
+          });
         }
       }
       log.info('Loaded persisted telemetry', { models: Object.keys(telemetryStore).length, file });
@@ -108,13 +109,21 @@ function initTelemetry(model: string): ModelTelemetry {
   return telemetryStore[model];
 }
 
+function normalizeTelemetry(stats: ModelTelemetry): ModelTelemetry {
+  return {
+    detectedLimit: Math.max(MIN_CONTEXT_CHARACTERS, stats.detectedLimit),
+    maxSuccessSize: Math.max(0, stats.maxSuccessSize),
+    minFailureSize: stats.minFailureSize,
+  };
+}
+
 export function getModelTelemetry(model: string): ModelTelemetry {
   return initTelemetry(model);
 }
 
 export function getContextLength(model: string): number {
   const stats = initTelemetry(model);
-  return Math.ceil(stats.detectedLimit / 3.5);
+  return Math.max(MIN_CONTEXT_TOKENS, Math.ceil(stats.detectedLimit / 3.5));
 }
 
 export function recordSuccess(model: string, promptSize: number): void {
@@ -128,6 +137,8 @@ export function recordSuccess(model: string, promptSize: number): void {
   if (stats.detectedLimit >= stats.minFailureSize) {
     stats.detectedLimit = Math.floor(stats.minFailureSize * 0.95);
   }
+
+  stats.detectedLimit = Math.max(MIN_CONTEXT_CHARACTERS, stats.detectedLimit);
 
   log.info('Recorded success', {
     model,

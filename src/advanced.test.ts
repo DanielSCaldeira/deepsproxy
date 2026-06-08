@@ -472,7 +472,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     const bodyObj = JSON.parse(init?.body as string || '{}');
     attempts.push(bodyObj.prompt.length);
     
-    if (bodyObj.prompt.length > 200) {
+    if (bodyObj.prompt.length > 28000) {
       const stream = new ReadableStream({
         start(c) {
           c.close();
@@ -499,7 +499,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
         model: 'deepseek-v4-flash-thinking',
         messages: [
           { role: 'system', content: 'Keep this instruction.' },
-          { role: 'user', content: 'A'.repeat(300) },
+          { role: 'user', content: 'A'.repeat(30000) },
         ],
         stream: false
       })
@@ -507,7 +507,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     
     const { getModelTelemetry } = await import('./services/telemetry.ts');
     const stats = getModelTelemetry('deepseek-v4-flash-thinking');
-    stats.detectedLimit = 400;
+    stats.detectedLimit = 60000;
     
     const res = await app.fetch(req);
     assert.strictEqual(res.status, 200);
@@ -519,7 +519,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     assert.ok(attempts[1] < attempts[0], 'Second attempt prompt should be shorter due to compression');
     
     assert.ok(stats.minFailureSize < Infinity, 'Should have recorded a failure');
-    assert.ok(stats.detectedLimit < 400, 'Detected limit should be reduced');
+    assert.ok(stats.detectedLimit < 60000, 'Detected limit should be reduced');
   } finally {
     restore();
   }

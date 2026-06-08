@@ -80,6 +80,51 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 
 ---
 
+## Configuracao da extensao Continue
+
+Este repositorio inclui um arquivo pronto para a extensao Continue:
+
+```txt
+continue.config.yaml
+```
+
+Instalacao automatica:
+
+```bash
+make continue-config
+```
+
+O comando cria a pasta `.continue` no diretorio do usuario, faz backup de um `config.yaml` existente e copia `continue.config.yaml` para o local correto.
+
+Passo a passo manual:
+
+1. Abra o arquivo `continue.config.yaml` deste repositorio.
+2. Copie todo o conteudo do arquivo.
+3. Abra o arquivo de configuracao global do Continue:
+
+```txt
+Windows: C:\Users\SEU_USUARIO\.continue\config.yaml
+macOS:   /Users/SEU_USUARIO/.continue/config.yaml
+Linux:   /home/SEU_USUARIO/.continue/config.yaml
+```
+
+4. Cole o conteudo copiado em `config.yaml`.
+5. Salve o arquivo.
+6. No VS Code, execute `Developer: Reload Window`.
+7. No Continue, selecione `LOCALHOST:3000 - DeepsProxy Flash`.
+
+Use `LOCALHOST:3000 - DeepsProxy Thinking` apenas quando quiser raciocinio explicito. Esse modelo costuma demorar mais para aparecer na extensao porque primeiro envia chunks em `reasoning_content` e depois envia a resposta final em `content`.
+
+Se o DeepsProxy estiver usando uma porta diferente de `3000`, ajuste `apiBase` no arquivo do Continue. Exemplo para porta `8080`:
+
+```yaml
+apiBase: http://127.0.0.1:8080/v1
+```
+
+Se voce definiu `API_KEY` no DeepsProxy, troque `apiKey: local` pela mesma chave.
+
+---
+
 ## 🔐 Política de bind e auth
 
 Diferente do original, este fork **falha fechado** quando `API_KEY` não está definida.
