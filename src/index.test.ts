@@ -30,7 +30,7 @@ test('Models endpoint returns deepseek-v4-flash and deepseek-v4-flash-thinking',
   assert.strictEqual(typeof flash.max_context_tokens, 'number');
 });
 
-test('Chat Completions endpoint with deepseek-v4-flash-thinking (thinking enabled)', async () => {
+test('Chat Completions endpoint with deepseek-v4-flash-thinking (thinking enabled)', { skip: process.env.DEEPSPROXY_RUN_LIVE_TESTS !== '1' }, async () => {
   // Initialize playwright for this test
   // NOTE: Headless mode can sometimes fail Cloudflare checks. We use headless=false for the test
   // to ensure it matches the logged-in browser state if needed, or you can switch it to true.

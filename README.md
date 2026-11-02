@@ -14,11 +14,14 @@ Proxy local compatível com a API OpenAI que roteia requisições para o DeepSee
 - **OpenAI API compatible**: `/v1/chat/completions` (stream e non-stream) + `/v1/models`
 - **Tool calling**: parser tolerante de `<tool_call>` em JSON e formato XML estilo Hermes
 - **Streaming SSE** correto, com extração de `reasoning_content` para modelos thinking
-- **Compressão de contexto** automática quando o histórico excede o limite detectado do modelo
+- **Resumo automático de contexto**: preserva decisões e pendências das mensagens antigas, mantém os turnos recentes e usa compressão como fallback
+- **Cache de resumo em memória** por prefixo do histórico, com expiração e limite de tamanho; sem persistir conteúdo da conversa em disco
 - **Telemetria de context window persistida** — descobre o limite real do modelo na primeira execução e relembra entre restarts
 - **Concorrência segura**: mutex serializa o uso da página Playwright para múltiplas requests simultâneas
 - **Fail-closed por padrão**: sem `API_KEY` o servidor faz bind apenas em `127.0.0.1` (e recusa subir se `BIND_HOST` for público)
 - **Logs estruturados com sanitização** de headers sensíveis (`Authorization`, `Cookie`, PoW)
+
+O resumo é acionado por padrão quando o prompt chega a 72% do limite detectado. O proxy faz uma chamada interna para resumir turnos antigos antes da resposta, preserva as mensagens `system` e mantém o turno recente completo. Se o resumo falhar, a compressão atual continua como fallback. O cache é volátil, limitado e expira após 30 minutos; o conteúdo da conversa não é salvo em disco.
 
 ---
 
@@ -44,7 +47,8 @@ src/
 └── utils/
     ├── logger.ts            # Logger central com redactor de headers
     ├── mutex.ts             # Lock cooperativo simples
-    ├── compression.ts       # Truncamento progressivo de histórico
+    ├── compression.ts       # Compressão/truncamento de fallback
+    ├── context-summary.ts   # Resumo automático e cache temporário por prefixo
     ├── json.ts              # Parser JSON tolerante a respostas LLM
     └── types.ts             # Tipos OpenAI
 ```
@@ -127,7 +131,7 @@ Se voce definiu `API_KEY` no DeepsProxy, troque `apiKey: local` pela mesma chave
 
 ## Configuração do Zed
 
-O projeto inclui `.zed/settings.json` com o provedor OpenAI compatível `deepsproxy-local`, configurado para `http://127.0.0.1:3000/v1` e os modelos Flash e Thinking. Dependendo da versão do Zed, adicione esse provedor em **Agent: Open Settings → LLM Providers → Add Provider → OpenAI** com nome `deepsproxy-local`, URL `http://127.0.0.1:3000/v1`, IDs `deepseek-v4-flash` e `deepseek-v4-flash-thinking` e janela de contexto `8000` (Flash) ou `64000` (Thinking). Para iniciar a API, use o atalho global `Ctrl+Alt+D` ou abra o seletor de tarefas com `Ctrl+Shift+R` e execute `DeepsProxy: Start local API`. A tarefa inicia o servidor em segundo plano ou detecta se ele já está ativo; depois selecione o provedor/modelo no painel Agent. O Zed não oferece um botão de extensão customizado nem inicia tarefas automaticamente ao selecionar um modelo.
+O projeto inclui `.zed/settings.json` com o provedor OpenAI compatível `deepsproxy-local`, configurado para `http://127.0.0.1:3000/v1` e os modelos Flash e Thinking. Dependendo da versão do Zed, adicione esse provedor em **Agent: Open Settings → LLM Providers → Add Provider → OpenAI** com nome `deepsproxy-local`, URL `http://127.0.0.1:3000/v1`, IDs `deepseek-v4-flash` e `deepseek-v4-flash-thinking` e janela de contexto `64000` para Flash e Thinking. O valor `max_tokens` define a janela de contexto do modelo no Zed; manter o Flash em `8000` fazia uma conversa nova parecer quase sem espaço desde o início. Para iniciar a API, use o atalho global `Ctrl+Alt+D` ou abra o seletor de tarefas com `Ctrl+Shift+R` e execute `DeepsProxy: Start local API`. A tarefa inicia o servidor em segundo plano ou detecta se ele já está ativo; depois selecione o provedor/modelo no painel Agent. O Zed não oferece um botão de extensão customizado nem inicia tarefas automaticamente ao selecionar um modelo.
 
 O arquivo também define `agent.tool_permissions.default` como `allow`, aprovando automaticamente as ferramentas do Agent Panel neste projeto. Isso reduz os avisos de confirmação; use apenas em um workspace confiável. Essa opção não dá permissões adicionais ao sistema operacional nem configura agentes externos.
 
@@ -172,6 +176,7 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `DEEPSPROXY_POW_TIMEOUT_MS` | `30000` | Tempo limite p/ capturar PoW |
 | `DEEPSPROXY_MAX_ATTEMPTS` | `3` | Retries por request |
 | `DEEPSPROXY_RETRY_DELAY_MS` | `1000` | Backoff entre tentativas |
+| `DEEPSPROXY_SUMMARY_TRIGGER_RATIO` | `0.72` | Fração do limite detectado que dispara resumo automático (entre `0.5` e `0.9`) |
 | `DEEPSPROXY_TELEMETRY_FILE` | `<profile>/.telemetry.json` | Onde a telemetria persiste |
 | `DEEPSPROXY_DISABLE_TELEMETRY_PERSIST` | `0` | `1` desliga a persistência |
 | `DEEPSEEK_APP_VERSION` | `2.0.0` | Header `x-app-version` enviado ao DeepSeek |
@@ -212,14 +217,14 @@ docker compose logs -f
 ## 🧪 Testes
 
 ```bash
-# Mock de Playwright já é ligado pelo próprio teste
-npx tsx --test src/advanced.test.ts
+# Testes unitários e de rota, sem login ou chamadas reais ao DeepSeek
+npm test
 
-# Tests do bootstrap (mock via env)
-TEST_MOCK_PLAYWRIGHT=true npx tsx --test src/index.test.ts
+# Simula dois turnos reais, usando o histórico completo como o Continue
+npm run test:live-context
 ```
 
-O teste de integração real (`Chat Completions endpoint with deepseek-v4-flash-thinking`) requer um perfil logado e conectividade com `chat.deepseek.com`.
+O teste `test:live-context` exige que a API esteja rodando em `http://127.0.0.1:3000` e que o perfil DeepSeek esteja autenticado. Ele envia dois turnos em streaming e confirma se o segundo recupera uma decisão antiga via resumo automático. Para outro endereço ou modelo, use `DEEPSPROXY_API_BASE` ou `DEEPSPROXY_LIVE_TEST_MODEL`. O teste de integração em `src/index.test.ts` também fica desativado por padrão; habilite-o explicitamente com `DEEPSPROXY_RUN_LIVE_TESTS=1`.
 
 ---
 

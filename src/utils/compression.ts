@@ -29,7 +29,7 @@ export function compressMessages(
   while (compressed.length > 2) {
     let indexToRemove = -1;
     for (let i = 0; i < compressed.length - 1; i++) {
-      if (compressed[i].role !== 'system') {
+      if (compressed[i].role !== 'system' && compressed[i].role !== 'context_summary') {
         indexToRemove = i;
         break;
       }

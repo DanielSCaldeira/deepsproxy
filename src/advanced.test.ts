@@ -524,3 +524,69 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     restore();
   }
 });
+
+test('automatic context summary keeps a continued OpenAI conversation coherent', async () => {
+  const capturedPayloads: any[] = [];
+  const restore = setupFetchMock((url, init) => {
+    const payload = JSON.parse(init?.body as string || '{}');
+    capturedPayloads.push(payload);
+    const isSummary = payload.prompt.includes('Create a compact, factual memory summary');
+    const answer = isSummary ? 'Decision: preserve the TypeScript implementation.' : 'The implementation is TypeScript.';
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"v":{"response":{"message_id":9001}}}\n\n'));
+        controller.enqueue(new TextEncoder().encode(`data: {"p":"response/content","v":${JSON.stringify(answer)}}\n\n`));
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  });
+
+  try {
+    const { getModelTelemetry } = await import('./services/telemetry.ts');
+    const model = 'deepseek-v4-flash-summary-test';
+    getModelTelemetry(model).detectedLimit = 40_000;
+    const initialMessages = [
+      { role: 'system', content: 'Preserve the user\'s requirements.' },
+      { role: 'user', content: `Old decision: use TypeScript. ${'A'.repeat(10_000)}` },
+      { role: 'assistant', content: `The TypeScript choice was confirmed. ${'B'.repeat(10_000)}` },
+      { role: 'user', content: `Continue from the earlier decision. ${'C'.repeat(10_000)}` },
+    ];
+
+    const first = await app.fetch(new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: initialMessages, stream: false }),
+    }));
+    assert.strictEqual(first.status, 200);
+    const firstBody = await first.json();
+    assert.strictEqual(firstBody.choices[0].message.content, 'The implementation is TypeScript.');
+
+    const continued = await app.fetch(new Request('http://localhost/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          ...initialMessages,
+          { role: 'assistant', content: firstBody.choices[0].message.content },
+          { role: 'user', content: 'Qual decisão tomamos antes?' },
+        ],
+        stream: false,
+      }),
+    }));
+    assert.strictEqual(continued.status, 200);
+
+    const summaryRequests = capturedPayloads.filter((payload) =>
+      payload.prompt.includes('Create a compact, factual memory summary')
+    );
+    assert.strictEqual(summaryRequests.length, 1, 'A matching cached prefix should avoid re-summarizing');
+    const finalPrompt = capturedPayloads[capturedPayloads.length - 1].prompt;
+    assert.ok(finalPrompt.includes('Decision: preserve the TypeScript implementation.'));
+    assert.ok(finalPrompt.includes('Qual decisão tomamos antes?'));
+    assert.ok(!finalPrompt.includes('Old decision: use TypeScript.'));
+  } finally {
+    restore();
+  }
+});
