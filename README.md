@@ -125,6 +125,18 @@ Se voce definiu `API_KEY` no DeepsProxy, troque `apiKey: local` pela mesma chave
 
 ---
 
+## Configuração do Zed
+
+O projeto inclui `.zed/settings.json` com o provedor OpenAI compatível `deepsproxy-local`, configurado para `http://127.0.0.1:3000/v1` e os modelos Flash e Thinking. Dependendo da versão do Zed, adicione esse provedor em **Agent: Open Settings → LLM Providers → Add Provider → OpenAI** com nome `deepsproxy-local`, URL `http://127.0.0.1:3000/v1`, IDs `deepseek-v4-flash` e `deepseek-v4-flash-thinking` e janela de contexto `8000` (Flash) ou `64000` (Thinking). Para iniciar a API, use o atalho global `Ctrl+Alt+D` ou abra o seletor de tarefas com `Ctrl+Shift+R` e execute `DeepsProxy: Start local API`. A tarefa inicia o servidor em segundo plano ou detecta se ele já está ativo; depois selecione o provedor/modelo no painel Agent. O Zed não oferece um botão de extensão customizado nem inicia tarefas automaticamente ao selecionar um modelo.
+
+O arquivo também define `agent.tool_permissions.default` como `allow`, aprovando automaticamente as ferramentas do Agent Panel neste projeto. Isso reduz os avisos de confirmação; use apenas em um workspace confiável. Essa opção não dá permissões adicionais ao sistema operacional nem configura agentes externos.
+
+Para iniciar o proxy, faça login uma vez com `npm run login` e execute `npm start`. O Zed exige uma credencial para habilitar provedores OpenAI compatíveis, mesmo quando o proxy local não valida chave. Para o provedor `deepsproxy-local`, defina a variável de usuário `DEEPSPROXY_LOCAL_API_KEY=local` ou informe `local` em **Agent: Open Settings → LLM Providers**. Sem `API_KEY` no DeepsProxy, esse valor fictício é aceito pelo proxy, que permanece restrito ao loopback. Se você definir `API_KEY` no DeepsProxy, use essa mesma chave em vez de `local`. Não coloque segredos em `settings.json`.
+
+A configuração usa o formato `language_models.openai_compatible` documentado pelo Zed para endpoints compatíveis com a API OpenAI.
+
+---
+
 ## 🔐 Política de bind e auth
 
 Diferente do original, este fork **falha fechado** quando `API_KEY` não está definida.

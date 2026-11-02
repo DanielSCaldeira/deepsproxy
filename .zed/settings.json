@@ -1,0 +1,43 @@
+{
+  "disable_ai": false,
+  "agent": {
+    "default_model": {
+      "provider": "deepsproxy-local",
+      "model": "deepseek-v4-flash",
+      "enable_thinking": false
+    },
+
+    "tool_permissions": {
+      "default": "allow",
+      "tools": {}
+    }
+  },
+  "language_models": {
+    "openai_compatible": {
+      "deepsproxy-local": {
+        "api_url": "http://127.0.0.1:3000/v1",
+        "available_models": [
+          {
+            "name": "deepseek-v4-flash",
+            "display_name": "DeepsProxy Flash",
+            "max_tokens": 8000
+          },
+          {
+            "name": "deepseek-v4-flash-thinking",
+            "display_name": "DeepsProxy Thinking",
+            "max_tokens": 64000,
+            "capabilities": {
+              "tools": true,
+              "images": false,
+              "parallel_tool_calls": false,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": true,
+              "max_tokens_parameter": true
+            }
+          }
+        ]
+      }
+    }
+  }
+}
