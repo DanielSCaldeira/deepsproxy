@@ -39,9 +39,6 @@ export function serializeOpenAIMessages(messages: Message[]): SerializedPrompt {
 
     if (msg.role === 'assistant') {
       let assistantContent = contentStr;
-      if ((msg as any).reasoning_content) {
-        assistantContent = `<think>\n${(msg as any).reasoning_content}\n</think>\n${assistantContent}`;
-      }
       if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {
           let args = tc.function?.arguments || '{}';
@@ -66,6 +63,9 @@ export function serializeOpenAIMessages(messages: Message[]): SerializedPrompt {
 
 export function appendToolInstructions(systemPrompt: string, body: OpenAIRequest): string {
   const bodyAny = body as any;
+  if (body.tool_choice === 'none') {
+    return `${systemPrompt}\n\nDo not call tools in this response.`;
+  }
   if (!bodyAny.tools || !Array.isArray(bodyAny.tools) || bodyAny.tools.length === 0) {
     return systemPrompt;
   }
@@ -80,10 +80,14 @@ export function appendToolInstructions(systemPrompt: string, body: OpenAIRequest
     }
     return t;
   });
-  const toolsJson = JSON.stringify(formattedTools, null, 2);
+  const toolsJson = JSON.stringify(formattedTools);
 
   let next = systemPrompt;
-  next += `\n\n# TOOLS AVAILABLE\nYou have access to the following tools:\n${toolsJson}\n\nTo use a tool, you MUST output a JSON object wrapped EXACTLY in these tags:\n<tool_call>\n{"name": "tool_name", "arguments": {"param_name": "value"}}\n</tool_call>\n\nRULES:\n1. You can call multiple tools by outputting multiple <tool_call> blocks consecutively.\n2. Do NOT output any other text after your <tool_call> blocks. Wait for the user to provide the tool response.\n3. The JSON must be valid and accurately follow the tool's parameters.\n\n`;
+  next += `\n\nTools: ${toolsJson}\nTo call a listed tool, output <tool_call>{"name":"tool_name","arguments":{}}</tool_call> with arguments matching its schema. For multiple calls, repeat the block. Stop after the calls and wait for tool results.\n`;
+
+  if (body.tool_choice === 'required') {
+    next += 'Call at least one listed tool in this response.\n';
+  }
 
   if (bodyAny.tool_choice && typeof bodyAny.tool_choice === 'object' && bodyAny.tool_choice.function) {
     const forcedTool = bodyAny.tool_choice.function.name;

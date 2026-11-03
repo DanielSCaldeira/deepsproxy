@@ -1,10 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { updateSessionParent } from '../services/deepseek.ts';
-import { ChoiceDelta, ToolCall, Usage } from '../utils/types.ts';
+import { ChoiceDelta, ToolCall, Usage, ToolChoice } from '../utils/types.ts';
 import { createLogger } from '../utils/logger.ts';
 import {
   TOOL_START,
-  TOOL_END,
+  toolEndTag,
+  isDSMLTag,
+  parseDSMLToolCalls,
+  ToolCallError,
   findToolOpen,
   findPartialToolOpenIndex,
   parseRecoverableToolCallBlock,
@@ -101,7 +104,8 @@ export async function parseDeepSeekStreamToOpenAI(
   promptTokens: number,
   uiSessionId: string,
   tools: any[] = [],
-  emit?: EmitChunk
+  emit?: EmitChunk,
+  toolChoice?: ToolChoice
 ): Promise<ParsedCompletion> {
   const reader = deepSeekStream.getReader();
   const decoder = new TextDecoder();
@@ -118,6 +122,7 @@ export async function parseDeepSeekStreamToOpenAI(
   const toolCalls: ToolCall[] = [];
   let buffer = '';
   let pendingToolLeadIn = '';
+  let invalidToolCall = false;
 
   const emitContent = async (text: string) => {
     if (!text || emittedToolCallCount > 0) return;
@@ -125,9 +130,13 @@ export async function parseDeepSeekStreamToOpenAI(
     if (emit) await emit(makeChunk(completionId, model, { content: text }));
   };
 
-  const emitToolCallFromBlock = async (toolBlock: string, openTag: string) => {
-    const toolCallObj = parseRecoverableToolCallBlock(toolBlock, openTag, tools);
+  const emitStructuredToolCall = async (toolCallObj: any) => {
     const toolName = toolCallObj.name || '';
+
+    if (toolChoice === 'none' || (typeof toolChoice === 'object' && toolName !== toolChoice.function.name)) {
+      invalidToolCall = true;
+      throw new ToolCallError();
+    }
 
     let toolArgs: Record<string, unknown> = {};
     if (toolCallObj.arguments && typeof toolCallObj.arguments === 'object') {
@@ -151,11 +160,23 @@ export async function parseDeepSeekStreamToOpenAI(
     emittedToolCallCount++;
   };
 
+  const emitToolCallFromBlock = async (toolBlock: string, openTag: string) => {
+    if (isDSMLTag(openTag)) {
+      const parsed = parseDSMLToolCalls(toolBlock, openTag, tools);
+      invalidToolCall ||= parsed.invalid;
+      for (const call of parsed.calls) {
+        try { await emitStructuredToolCall(call); } catch { invalidToolCall = true; }
+      }
+    } else {
+      await emitStructuredToolCall(parseRecoverableToolCallBlock(toolBlock, openTag, tools));
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done && !buffer) break;
 
-    buffer += decoder.decode(value, { stream: true });
+    buffer += done ? decoder.decode() + '\n' : decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
@@ -262,7 +283,8 @@ export async function parseDeepSeekStreamToOpenAI(
           }
 
           const lowerBuffer = contentEmitBuffer.toLowerCase();
-          const endIdx = lowerBuffer.indexOf(TOOL_END);
+          const endTag = toolEndTag(currentToolOpenTag);
+          const endIdx = lowerBuffer.indexOf(endTag.toLowerCase());
           if (endIdx === -1) break;
 
           const toolBlock = contentEmitBuffer.substring(0, endIdx).trim();
@@ -270,6 +292,7 @@ export async function parseDeepSeekStreamToOpenAI(
             await emitToolCallFromBlock(toolBlock, currentToolOpenTag);
             pendingToolLeadIn = '';
           } catch (e: any) {
+            if (isDSMLTag(currentToolOpenTag) || e instanceof ToolCallError) invalidToolCall = true;
             log.warn('Dropping malformed tool call block', { error: e?.message || String(e) });
             if (emittedToolCallCount === 0 && pendingToolLeadIn.trim().length > 0) {
               await emitContent(pendingToolLeadIn);
@@ -279,7 +302,7 @@ export async function parseDeepSeekStreamToOpenAI(
 
           insideTool = false;
           currentToolOpenTag = TOOL_START;
-          contentEmitBuffer = contentEmitBuffer.substring(endIdx + TOOL_END.length);
+          contentEmitBuffer = contentEmitBuffer.substring(endIdx + endTag.length);
         }
       } catch {
         // partial or malformed DeepSeek chunk - skip
@@ -287,7 +310,9 @@ export async function parseDeepSeekStreamToOpenAI(
     }
   }
 
-  if (insideTool && contentEmitBuffer.trim().length > 0) {
+  if (insideTool && isDSMLTag(currentToolOpenTag)) {
+    invalidToolCall = true;
+  } else if (insideTool && contentEmitBuffer.trim().length > 0) {
     try {
       await emitToolCallFromBlock(contentEmitBuffer.trim(), currentToolOpenTag);
       pendingToolLeadIn = '';
@@ -300,8 +325,14 @@ export async function parseDeepSeekStreamToOpenAI(
     }
   }
 
-  if (!insideTool && contentEmitBuffer.length > 0 && emittedToolCallCount === 0) {
+  if (!insideTool && contentEmitBuffer.trimStart().startsWith('<｜')) {
+    invalidToolCall = true;
+  } else if (!insideTool && contentEmitBuffer.length > 0 && emittedToolCallCount === 0) {
     await emitContent(contentEmitBuffer);
+  }
+
+  if (emittedToolCallCount === 0 && (invalidToolCall || toolChoice === 'required' || typeof toolChoice === 'object')) {
+    throw new ToolCallError();
   }
 
   const usage: Usage = {

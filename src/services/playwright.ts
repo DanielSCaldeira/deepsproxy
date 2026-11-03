@@ -1,7 +1,8 @@
 import { chromium, BrowserContext, Page } from 'playwright';
-import path from 'path';
+import { getProfileDirectory, hasSavedSession, restoreSession, saveSession, lockProfile, isProfileInUse } from './session-store.ts';
 import { createLogger } from '../utils/logger.ts';
 import { Mutex } from '../utils/mutex.ts';
+import { pauseBeforeDeepSeekAction } from './action-pacing.ts';
 
 const log = createLogger('playwright');
 
@@ -9,6 +10,13 @@ let context: BrowserContext | null = null;
 let activePage: Page | null = null;
 
 const sessionMutex = new Mutex();
+const CHAT_INPUT_SELECTOR = 'textarea:visible, [role="textbox"]:visible, [contenteditable="true"]:visible';
+
+type SessionState = 'not_initialized' | 'authenticated' | 'login_required' | 'unavailable';
+let sessionStatus: { state: SessionState; checkedAt: string | null } = {
+  state: 'not_initialized', checkedAt: null,
+};
+let lastSavedAt = 0;
 
 export interface DeepSeekHeaders {
   'x-ds-pow-response': string;
@@ -40,22 +48,90 @@ export function getActivePage(): Page | null {
   return activePage;
 }
 
+export async function openDeepSeekChat(page: Page, timeout?: number): Promise<void> {
+  await pauseBeforeDeepSeekAction('open-chat');
+  await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', ...(timeout === undefined ? {} : { timeout }) });
+}
+
+export async function waitForAuthenticatedChat(page: Page): Promise<void> {
+  await page.locator(CHAT_INPUT_SELECTOR).first().waitFor({ state: 'visible', timeout: 0 });
+  await page.waitForURL((url) => url.hostname === 'chat.deepseek.com' && !/sign_in|login/.test(url.pathname), {
+    timeout: 0,
+  });
+}
+
 export async function initPlaywright(headless = true): Promise<void> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) return;
 
-  const profilePath = path.resolve(process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile');
+  const profilePath = getProfileDirectory();
   const userAgent = process.env.DEEPSEEK_USER_AGENT || DEFAULT_USER_AGENT;
 
   log.info('Launching persistent context', { profilePath, headless });
 
-  context = await chromium.launchPersistentContext(profilePath, {
-    headless,
-    userAgent,
-    args: DEFAULT_LAUNCH_ARGS,
-  });
+  const unlock = await lockProfile();
+  try {
+    await pauseBeforeDeepSeekAction('open-browser');
+    context = await chromium.launchPersistentContext(profilePath, {
+      channel: 'chromium',
+      headless,
+      userAgent,
+      args: DEFAULT_LAUNCH_ARGS,
+    });
+  } catch (error) {
+    await unlock();
+    throw error;
+  }
 
-  activePage = await context.newPage();
+  try {
+    if (await restoreSession(context)) log.info('Restored saved DeepSeek session');
+  } catch {
+    log.warn('Could not restore session snapshot; using the persistent browser profile');
+  }
+  // Chromium already opens a blank tab; reuse it instead of opening another.
+  activePage = context.pages().find(page => page.url() === 'about:blank') || await context.newPage();
+  context.on('close', () => {
+    void unlock();
+    context = null;
+    activePage = null;
+    sessionStatus = { state: 'not_initialized', checkedAt: null };
+  });
+}
+
+export async function saveAuthenticatedSession(): Promise<void> {
+  if (!context || !activePage) throw new Error('O navegador da sessão não está disponível.');
+  if (/sign_in|login/.test(new URL(activePage.url()).pathname) ||
+      !await activePage.locator(CHAT_INPUT_SELECTOR).first().isVisible()) {
+    throw new Error('A autenticação ainda não foi confirmada; mantenha o navegador aberto.');
+  }
+  await saveSession(context);
+  lastSavedAt = Date.now();
+  sessionStatus = { state: 'authenticated', checkedAt: new Date().toISOString() };
+}
+
+export async function getSessionStatus() {
+  if (activePage && sessionMutex.queueDepth === 0 &&
+      (!sessionStatus.checkedAt || Date.now() - Date.parse(sessionStatus.checkedAt) > 15_000)) {
+    await sessionMutex.withLock(async () => {
+      try {
+        if (activePage?.url() === 'about:blank') {
+          await openDeepSeekChat(activePage, 15_000);
+        }
+        if (activePage) await ensureChatInputReady(activePage);
+      } catch (error) {
+        sessionStatus = {
+          state: /login is required/.test(String(error)) ? 'login_required' : 'unavailable',
+          checkedAt: new Date().toISOString(),
+        };
+      }
+    });
+  }
+  return {
+    ...sessionStatus,
+    busy: sessionMutex.queueDepth > 0,
+    sessionSaved: await hasSavedSession(),
+    profileInUse: !activePage && await isProfileInUse(),
+  };
 }
 
 export async function closePlaywright(): Promise<void> {
@@ -97,11 +173,15 @@ async function inspectPageState(page: Page): Promise<PageState> {
 }
 
 async function ensureChatInputReady(page: Page): Promise<void> {
-  const chatInputSelector = 'textarea, [role="textbox"], [contenteditable="true"]';
+  const chatInputSelector = CHAT_INPUT_SELECTOR;
   const timeoutMs = Number(process.env.DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS || '8000');
 
   try {
     await page.waitForSelector(chatInputSelector, { timeout: timeoutMs });
+    sessionStatus = { state: 'authenticated', checkedAt: new Date().toISOString() };
+    if (Date.now() - lastSavedAt > 60_000) {
+      await saveAuthenticatedSession().catch(() => log.warn('Could not save DeepSeek session snapshot'));
+    }
   } catch {
     const state = await inspectPageState(page);
     if (state.suspended) {
@@ -113,6 +193,7 @@ async function ensureChatInputReady(page: Page): Promise<void> {
       throw new Error(`DeepSeek account is suspended; chat input is unavailable. Original DeepSeek message: ${detail}`);
     }
     if (state.loginRequired) {
+      sessionStatus = { state: 'login_required', checkedAt: new Date().toISOString() };
       throw new Error('DeepSeek login is required; chat input is unavailable.');
     }
     throw new Error('DeepSeek chat input unavailable; page did not expose an input box.');
@@ -120,6 +201,8 @@ async function ensureChatInputReady(page: Page): Promise<void> {
 }
 
 async function captureHeadersFromInterception(page: Page): Promise<HeaderCaptureResult> {
+  // Start the interception timeout after pacing, so slow settings do not expire it.
+  await pauseBeforeDeepSeekAction('send-message');
   return new Promise<HeaderCaptureResult>((resolve, reject) => {
     const timeoutMs = Number(process.env.DEEPSPROXY_POW_TIMEOUT_MS || '30000');
     const timeout = setTimeout(() => reject(new Error('Timeout waiting for PoW headers')), timeoutMs);
@@ -161,7 +244,7 @@ async function captureHeadersFromInterception(page: Page): Promise<HeaderCapture
       .route(route, routeHandler)
       .then(async () => {
         try {
-          await page.fill('textarea', 'a');
+          await page.locator(CHAT_INPUT_SELECTOR).first().fill('a');
           await page.keyboard.press('Enter');
         } catch (e: any) {
           clearTimeout(timeout);
@@ -205,7 +288,7 @@ export async function getDeepSeekHeaders(forceNew = false): Promise<HeaderCaptur
     const isOnSpecificChat = isOnDeepSeek && /\/chat\/\d+/.test(currentUrl);
 
     if (!isOnDeepSeek || forceNew || isOnSpecificChat) {
-      await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
+      await openDeepSeekChat(page);
     }
 
     await ensureChatInputReady(page);

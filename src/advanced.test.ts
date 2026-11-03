@@ -56,7 +56,7 @@ test('multiturn-thinking-tools: serializes complete OpenAI message history', asy
     // produce the post-tool final answer.
     assert.ok(capturedPrompt.includes('User: hello'), 'Must include original user message');
     assert.ok(capturedPrompt.includes('Assistant:'), 'Must include assistant history');
-    assert.ok(capturedPrompt.includes('<think>\nthinking about hello\n</think>'), 'Must include previous thinking');
+    assert.ok(!capturedPrompt.includes('thinking about hello'), 'Must omit previous reasoning while retaining useful history');
     assert.ok(capturedPrompt.includes('<tool_call>{"name": "test", "arguments": {}}</tool_call>'), 'Must include previous tool call');
     assert.ok(capturedPrompt.includes('Tool Response (test): success'), 'Must include tool response signature');
   } finally {

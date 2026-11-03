@@ -9,6 +9,7 @@ import { summarizeOlderContext } from '../utils/context-summary.ts';
 import { Message } from '../utils/types.ts';
 import { createLogger } from '../utils/logger.ts';
 import { serializeOpenAIMessages, appendToolInstructions } from './serialization.ts';
+import { ToolCallError } from './tool-parser.ts';
 import {
   parseDeepSeekStreamToOpenAI,
   peekStream,
@@ -128,7 +129,9 @@ async function tryNonStream(
         body.model,
         promptTokens,
         result.uiSessionId,
-        (body as any).tools || []
+        (body as any).tools || [],
+        undefined,
+        body.tool_choice
       );
 
       if (parsed.content === '' && parsed.toolCalls.length === 0) {
@@ -140,6 +143,7 @@ async function tryNonStream(
       recordSuccess(body.model, promptSize);
       return { parsed, uiSessionId: result.uiSessionId };
     } catch (err: any) {
+      if (err instanceof ToolCallError) throw err;
       log.error('Chat attempt failed (non-stream)', { attempt, error: err?.message || String(err) });
       lastError = err;
       recordFailure(body.model, promptSize);
@@ -226,20 +230,29 @@ export async function chatCompletions(c: Context) {
 
       await writeEvent(makeChunk(completionId, body.model, { role: 'assistant', content: '' }));
 
-      const parsed = await parseDeepSeekStreamToOpenAI(
-        deepSeekStream,
-        completionId,
-        body.model,
-        promptTokens,
-        uiSessionId,
-        (body as any).tools || [],
-        writeEvent
-      );
+      try {
+        const parsed = await parseDeepSeekStreamToOpenAI(
+          deepSeekStream,
+          completionId,
+          body.model,
+          promptTokens,
+          uiSessionId,
+          (body as any).tools || [],
+          writeEvent,
+          body.tool_choice
+        );
 
-      await writeEvent(makeChunk(completionId, body.model, {}, parsed.finishReason, parsed.usage));
+        await writeEvent(makeChunk(completionId, body.model, {}, parsed.finishReason, parsed.usage));
+      } catch (err) {
+        if (!(err instanceof ToolCallError)) throw err;
+        await writeEvent({ error: { message: err.message, type: 'upstream_error', code: 'invalid_tool_call' } });
+      }
       await streamWriter.write('data: [DONE]\n\n');
     });
   } catch (err: any) {
+    if (err instanceof ToolCallError) {
+      return c.json({ error: { message: err.message, type: 'upstream_error', code: 'invalid_tool_call' } }, 502);
+    }
     log.error('Error in chatCompletions', { error: err?.message || String(err) });
     const errMessage = err?.message || String(err);
     const { status, code } = mapErrorToStatus(errMessage);

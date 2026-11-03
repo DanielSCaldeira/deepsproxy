@@ -3,6 +3,33 @@ import assert from 'node:assert';
 import { app } from './index.ts';
 import { initPlaywright, closePlaywright } from './services/playwright.ts';
 
+test('Status page is available at the root without exposing protected status', async () => {
+  const previousKey = process.env.API_KEY;
+  process.env.API_KEY = 'status-test-secret';
+  try {
+    const page = await app.request('/');
+    assert.strictEqual(page.status, 200);
+    assert.match(page.headers.get('content-type') || '', /text\/html/);
+    const html = await page.text();
+    assert.match(html, /Status da conexão/);
+    assert.ok(!html.includes('status-test-secret'));
+    const denied = await app.request('/api/status');
+    assert.strictEqual(denied.status, 401);
+    const allowed = await app.request('/api/status', { headers: { Authorization: 'Bearer status-test-secret' } });
+    assert.strictEqual(allowed.status, 200);
+    assert.strictEqual(allowed.headers.get('cache-control'), 'no-store');
+    const data = await allowed.json();
+    assert.strictEqual(data.status, 'ok');
+    assert.strictEqual(data.deepseek.state, 'not_initialized');
+    assert.strictEqual(typeof data.deepseek.sessionSaved, 'boolean');
+    assert.ok(!JSON.stringify(data).includes('cookie'));
+    assert.ok(!JSON.stringify(data).includes('authorization'));
+  } finally {
+    if (previousKey === undefined) delete process.env.API_KEY;
+    else process.env.API_KEY = previousKey;
+  }
+});
+
 test('Health check endpoint returns status ok', async () => {
   const req = new Request('http://localhost/health');
   const res = await app.fetch(req);

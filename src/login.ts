@@ -1,5 +1,7 @@
-import { initPlaywright, closePlaywright, getActivePage } from './services/playwright.ts';
+import 'dotenv/config';
+import { initPlaywright, getActivePage, saveAuthenticatedSession, waitForAuthenticatedChat, openDeepSeekChat } from './services/playwright.ts';
 import { createLogger } from './utils/logger.ts';
+import { startProxyServer } from './index.ts';
 
 const log = createLogger('login');
 
@@ -13,15 +15,21 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded' });
-  log.info('Browser opened — log in to chat.deepseek.com');
-  log.info('Once logged in, press Ctrl+C here or close the browser.');
+  // Keep the API and interactive login in the same browser context. Closing it
+  // and reopening a second browser here can lose session-only authentication.
+  startProxyServer(false);
 
-  process.on('SIGINT', async () => {
-    log.info('Closing browser');
-    await closePlaywright();
-    process.exit(0);
-  });
+  await openDeepSeekChat(page);
+  log.info('Faça login nesta janela do DeepSeek. O navegador permanecerá aberto e será usado pela API.');
+  await waitForAuthenticatedChat(page);
+  log.info('Login confirmado. Salvando a sessão do navegador.');
+  await saveAuthenticatedSession();
+  log.info('Sessão salva. O proxy está usando este mesmo navegador. Não é necessário executar npm start.');
 }
 
-main();
+main().catch((error: unknown) => {
+  log.error('Login não confirmado. Execute npm run login novamente e aguarde a confirmação.', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  process.exitCode = 1;
+});

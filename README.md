@@ -12,7 +12,10 @@ Proxy local compatível com a API OpenAI que roteia requisições para o DeepSee
 ## ✨ Recursos
 
 - **OpenAI API compatible**: `/v1/chat/completions` (stream e non-stream) + `/v1/models`
-- **Tool calling**: parser tolerante de `<tool_call>` em JSON e formato XML estilo Hermes
+- **Tool calling**: parser tolerante de `<tool_call>` em JSON/XML estilo Hermes e conversão de DSML do DeepSeek para `tool_calls`, em stream e non-stream
+- **Entrada compacta**: preserva instruções e contexto útil do cliente, omite raciocínio anterior e envia catálogo de ferramentas em JSON compacto
+- **Pausas internas aleatórias**: espera de 3 a 7 segundos antes de abrir o navegador/conversa e antes de enviar uma mensagem, inclusive em resumos e novas tentativas. Ajuste `DEEPSPROXY_ACTION_DELAY_MIN_MS` e `DEEPSPROXY_ACTION_DELAY_MAX_MS` no `.env` (ambos `0` desativam). As pausas reduzem a frequência das ações; não garantem ausência de bloqueios pelo serviço.
+- **Controle de ferramentas**: respeita `tool_choice`; DSML inválido sem chamadas válidas retorna `invalid_tool_call` (HTTP 502 ou evento de erro SSE), sem executar comandos incompletos. A recuperação XML/Hermes existente permanece compatível.
 - **Streaming SSE** correto, com extração de `reasoning_content` para modelos thinking
 - **Resumo automático de contexto**: preserva decisões e pendências das mensagens antigas, mantém os turnos recentes e usa compressão como fallback
 - **Cache de resumo em memória** por prefixo do histórico, com expiração e limite de tamanho; sem persistir conteúdo da conversa em disco
@@ -63,12 +66,16 @@ cd deepsproxy
 npm install
 npx playwright install chromium
 
-# 1) Fazer login (abre browser real, você loga manualmente)
+# Fazer login e iniciar o proxy mantendo o navegador aberto
 npm run login
 
-# 2) Subir o proxy
+# Nos próximos usos, iniciar com a sessão salva
 PORT=3000 npm start
 ```
+
+Abra `http://127.0.0.1:3000/` para consultar o status do servidor, a autenticação no DeepSeek e a sessão salva. A página atualiza automaticamente a cada 15 segundos. Se houver `API_KEY`, informe a chave na página para consultar os detalhes.
+
+O comando `npm run login` inicia a API e aguarda o login sem limite de tempo. Após a autenticação, mantém o navegador aberto e usa essa mesma sessão para atender às requisições; não execute outro `npm start` enquanto esse comando estiver ativo. A sessão é salva no perfil local (incluindo cookies, armazenamento local e IndexedDB) e restaurada ao reiniciar. O perfil padrão fica em `deepseek_profile` dentro do projeto, independentemente da pasta de onde o comando é executado. Não apague essa pasta se quiser preservar o login. O DeepSeek ainda pode expirar ou revogar uma sessão; nesse caso, a tela indicará a necessidade de entrar novamente. O login e a API usam o mesmo Chromium e reservam o perfil para evitar uso simultâneo. Para manter o navegador visível também com `npm start`, configure `PLAYWRIGHT_HEADLESS=false`.
 
 O proxy fica em `http://127.0.0.1:3000/v1/chat/completions`. Teste com qualquer SDK OpenAI:
 

@@ -1,8 +1,70 @@
 import { robustParseJSON } from '../utils/json.ts';
+import { validateAgainstSchema } from '../tools/schema.ts';
+
+export class ToolCallError extends Error {
+  constructor() {
+    super('DeepSeek returned an invalid or incomplete tool call, or did not follow tool_choice.');
+    this.name = 'ToolCallError';
+  }
+}
+
+const DSML_PREFIX = '<｜｜DSML｜｜';
+export function isDSMLTag(tag: string): boolean {
+  return tag.toLowerCase().startsWith(DSML_PREFIX.toLowerCase());
+}
+
+function attribute(tag: string, name: string): string | undefined {
+  const match = tag.match(new RegExp(`\\s${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
+  return match ? decodeXmlEntities(match[1]) : undefined;
+}
+
+/** Parse only complete DSML invokes; never repair a truncated command. */
+export function parseDSMLToolCalls(block: string, openTag: string, tools: any[]): { calls: any[]; invalid: boolean } {
+  const calls: any[] = [];
+  let invalid = false;
+  const parseInvoke = (tag: string, content: string) => {
+    const name = attribute(tag, 'name');
+    const tool = tools.find(t => t.function?.name === name);
+    if (!name || !tool) throw new ToolCallError();
+    const args: Record<string, unknown> = Object.create(null);
+    const parameterRe = /(<｜｜DSML｜｜\s+parameter\b[^>]*>)([\s\S]*?)<\/｜｜DSML｜｜\s+parameter\s*>/gi;
+    let end = 0;
+    for (const match of content.matchAll(parameterRe)) {
+      if (content.slice(end, match.index).trim()) throw new ToolCallError();
+      const key = attribute(match[1], 'name');
+      const stringFlag = attribute(match[1], 'string');
+      if (!key || Object.hasOwn(args, key) || (stringFlag !== 'true' && stringFlag !== 'false')) throw new ToolCallError();
+      if (/<\/?｜｜DSML｜｜\s+(?:parameter|invoke|calls)\b/i.test(match[2])) throw new ToolCallError();
+      const raw = decodeXmlEntities(match[2]);
+      args[key] = stringFlag === 'true' ? raw : JSON.parse(raw);
+      end = match.index! + match[0].length;
+    }
+    if (content.slice(end).trim()) throw new ToolCallError();
+    if (tool.function.parameters) validateAgainstSchema(args, tool.function.parameters);
+    return { name, arguments: args };
+  };
+  if (/\s+invoke\b/i.test(openTag)) {
+    return { calls: [parseInvoke(openTag, block)], invalid: false };
+  }
+  const invokeRe = /(<｜｜DSML｜｜\s+invoke\b[^>]*>)([\s\S]*?)<\/｜｜DSML｜｜\s+invoke\s*>/gi;
+  let end = 0;
+  for (const match of block.matchAll(invokeRe)) {
+    if (block.slice(end, match.index).trim()) invalid = true;
+    try { calls.push(parseInvoke(match[1], match[2])); } catch { invalid = true; }
+    end = match.index! + match[0].length;
+  }
+  if (!end || block.slice(end).trim()) invalid = true;
+  return { calls, invalid };
+}
 
 export const TOOL_START = '<tool_call>';
 export const TOOL_END = '</tool_call>';
-export const TOOL_OPEN_RE = /<tool_call\b[^>]*>/i;
+export const TOOL_OPEN_RE = /<tool_call\b[^>]*>|<｜｜DSML｜｜\s+(?:calls|invoke)\b[^>]*>/i;
+
+export function toolEndTag(openTag: string): string {
+  if (!isDSMLTag(openTag)) return TOOL_END;
+  return /\s+calls\b/i.test(openTag) ? '</｜｜DSML｜｜ calls>' : '</｜｜DSML｜｜ invoke>';
+}
 
 function decodeXmlEntities(value: string): string {
   return value
@@ -127,11 +189,13 @@ export function findToolOpen(buffer: string): { startIdx: number; endIdx: number
 
 export function findPartialToolOpenIndex(buffer: string): number {
   const lower = buffer.toLowerCase();
-  const idx = lower.lastIndexOf('<tool_call');
-  if (idx !== -1 && lower.indexOf('>', idx) === -1) return idx;
-
-  for (let i = 1; i < TOOL_START.length; i++) {
-    if (lower.endsWith(TOOL_START.substring(0, i))) return buffer.length - i;
+  let hold = buffer.length;
+  for (const prefix of ['<tool_call', DSML_PREFIX.toLowerCase()]) {
+    const idx = lower.lastIndexOf(prefix);
+    if (idx !== -1 && lower.indexOf('>', idx) === -1) hold = Math.min(hold, idx);
+    for (let i = 1; i <= prefix.length; i++) {
+      if (lower.endsWith(prefix.substring(0, i))) hold = Math.min(hold, buffer.length - i);
+    }
   }
-  return -1;
+  return hold === buffer.length ? -1 : hold;
 }

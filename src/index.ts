@@ -5,10 +5,11 @@ import { swaggerUI } from '@hono/swagger-ui';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { chatCompletions } from './routes/chat.ts';
-import { initPlaywright } from './services/playwright.ts';
+import { initPlaywright, closePlaywright, saveAuthenticatedSession, getSessionStatus, getActivePage, openDeepSeekChat } from './services/playwright.ts';
 import { getContextLength } from './services/telemetry.ts';
 import { createLogger } from './utils/logger.ts';
 import { openApiSpec } from './openapi.ts';
+import { statusPage } from './routes/status.ts';
 
 dotenv.config();
 
@@ -35,6 +36,8 @@ function modelEntry(id: string) {
 
 app.use('*', cors());
 
+app.get('/', (c) => c.html(statusPage));
+
 app.get('/openapi.json', (c) => c.json(openApiSpec));
 app.get('/docs', swaggerUI({ url: '/openapi.json' }));
 
@@ -52,6 +55,16 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
+
+app.get('/api/status', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    deepseek: await getSessionStatus(),
+  });
+});
 
 app.post('/v1/chat/completions', chatCompletions);
 
@@ -109,18 +122,45 @@ function resolveBindDecision(): BindDecision {
   return { host: '0.0.0.0', port };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const headless = process.env.PLAYWRIGHT_HEADLESS !== 'false';
+export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 'false') {
   const bind = resolveBindDecision();
 
-  initPlaywright(headless)
-    .then(() => {
+  const server = serve({ fetch: app.fetch, port: bind.port, hostname: bind.host });
+  log.info('Server starting', { host: bind.host, port: bind.port });
+  let initializing = false;
+  let stopping = false;
+  const ensureBrowser = async () => {
+    if (initializing || stopping || getActivePage()) return;
+    initializing = true;
+    try {
+      await initPlaywright(headless);
+      if (!headless) {
+        const page = getActivePage();
+        if (page) await openDeepSeekChat(page);
+      }
       log.info('Playwright initialized');
-      log.info('Server starting', { host: bind.host, port: bind.port });
-      serve({ fetch: app.fetch, port: bind.port, hostname: bind.host });
-    })
-    .catch((err: any) => {
+    } catch (err: any) {
       log.error('Failed to initialize playwright', { error: err?.message || String(err) });
-      process.exit(1);
-    });
+    } finally {
+      initializing = false;
+    }
+  };
+  void ensureBrowser();
+  const recovery = setInterval(() => void ensureBrowser(), 15_000);
+  recovery.unref();
+  const shutdown = async () => {
+    stopping = true;
+    clearInterval(recovery);
+    server.close();
+    await saveAuthenticatedSession().catch(() => undefined);
+    await closePlaywright();
+    process.exit(0);
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  return server;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startProxyServer();
 }
