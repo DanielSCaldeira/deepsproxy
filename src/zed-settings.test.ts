@@ -7,10 +7,10 @@ const settings = JSON.parse(
 );
 const availableModels = settings.language_models.openai_compatible['deepsproxy-local'].available_models;
 
-test('Zed models expose a 64k context window for Flash and Thinking', () => {
+test('Zed models expose a conservative 512k context window for Flash and Thinking', () => {
   for (const modelId of ['deepseek-v4-flash', 'deepseek-v4-flash-thinking']) {
     const model = availableModels.find((entry: { name: string }) => entry.name === modelId);
     assert.ok(model, `Expected ${modelId} to be configured in Zed`);
-    assert.equal(model.max_tokens, 64_000);
+    assert.equal(model.max_tokens, 512_000);
   }
 });

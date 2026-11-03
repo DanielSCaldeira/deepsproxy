@@ -496,7 +496,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'deepseek-v4-flash-thinking',
+        model: 'deepseek-v4-flash-thinking-telemetry-test',
         messages: [
           { role: 'system', content: 'Keep this instruction.' },
           { role: 'user', content: 'A'.repeat(30000) },
@@ -506,7 +506,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     });
     
     const { getModelTelemetry } = await import('./services/telemetry.ts');
-    const stats = getModelTelemetry('deepseek-v4-flash-thinking');
+    const stats = getModelTelemetry('deepseek-v4-flash-thinking-telemetry-test');
     stats.detectedLimit = 60000;
     
     const res = await app.fetch(req);
@@ -525,7 +525,7 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
   }
 });
 
-test('automatic context summary keeps a continued OpenAI conversation coherent', async () => {
+test('automatic context summary keeps continuity across invisible upstream session rollovers', async () => {
   const capturedPayloads: any[] = [];
   const restore = setupFetchMock((url, init) => {
     const payload = JSON.parse(init?.body as string || '{}');
@@ -562,6 +562,8 @@ test('automatic context summary keeps a continued OpenAI conversation coherent',
     assert.strictEqual(first.status, 200);
     const firstBody = await first.json();
     assert.strictEqual(firstBody.choices[0].message.content, 'The implementation is TypeScript.');
+    assert.ok(!('uiSessionId' in firstBody));
+    assert.ok(!('chat_session_id' in firstBody));
 
     const continued = await app.fetch(new Request('http://localhost/v1/chat/completions', {
       method: 'POST',

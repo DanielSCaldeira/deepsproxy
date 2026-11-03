@@ -10,10 +10,22 @@ export interface ModelTelemetry {
   minFailureSize: number;
 }
 
-const DEFAULT_CONTEXT_CHARACTERS = 64_000 * 3.5;
+const DEFAULT_CONTEXT_TOKENS = 64_000;
+const DEFAULT_CONTEXT_CHARACTERS = DEFAULT_CONTEXT_TOKENS * 3.5;
 const MIN_CONTEXT_TOKENS = 8_000;
-const MIN_CONTEXT_CHARACTERS = MIN_CONTEXT_TOKENS * 3.5;
+const CONSERVATIVE_FLASH_CONTEXT_TOKENS = 512_000;
 const PERSIST_DEBOUNCE_MS = 1000;
+
+function minimumContextTokens(model: string): number {
+  if (model === 'deepseek-v4-flash' || model === 'deepseek-v4-flash-thinking') {
+    return CONSERVATIVE_FLASH_CONTEXT_TOKENS;
+  }
+  return MIN_CONTEXT_TOKENS;
+}
+
+function minimumContextCharacters(model: string): number {
+  return minimumContextTokens(model) * 3.5;
+}
 
 const telemetryStore: Record<string, ModelTelemetry> = {};
 
@@ -47,7 +59,7 @@ function loadFromDisk(): void {
             detectedLimit: stats.detectedLimit,
             maxSuccessSize: stats.maxSuccessSize,
             minFailureSize: stats.minFailureSize === null ? Infinity : stats.minFailureSize,
-          });
+          }, model);
         }
       }
       log.info('Loaded persisted telemetry', { models: Object.keys(telemetryStore).length, file });
@@ -101,7 +113,7 @@ loadFromDisk();
 function initTelemetry(model: string): ModelTelemetry {
   if (!telemetryStore[model]) {
     telemetryStore[model] = {
-      detectedLimit: DEFAULT_CONTEXT_CHARACTERS,
+      detectedLimit: Math.max(DEFAULT_CONTEXT_CHARACTERS, minimumContextCharacters(model)),
       maxSuccessSize: 0,
       minFailureSize: Infinity,
     };
@@ -109,9 +121,9 @@ function initTelemetry(model: string): ModelTelemetry {
   return telemetryStore[model];
 }
 
-function normalizeTelemetry(stats: ModelTelemetry): ModelTelemetry {
+function normalizeTelemetry(stats: ModelTelemetry, model: string): ModelTelemetry {
   return {
-    detectedLimit: Math.max(MIN_CONTEXT_CHARACTERS, stats.detectedLimit),
+    detectedLimit: Math.max(minimumContextCharacters(model), stats.detectedLimit),
     maxSuccessSize: Math.max(0, stats.maxSuccessSize),
     minFailureSize: stats.minFailureSize,
   };
@@ -123,7 +135,7 @@ export function getModelTelemetry(model: string): ModelTelemetry {
 
 export function getContextLength(model: string): number {
   const stats = initTelemetry(model);
-  return Math.max(MIN_CONTEXT_TOKENS, Math.ceil(stats.detectedLimit / 3.5));
+  return Math.max(minimumContextTokens(model), Math.ceil(stats.detectedLimit / 3.5));
 }
 
 export function recordSuccess(model: string, promptSize: number): void {
@@ -138,7 +150,7 @@ export function recordSuccess(model: string, promptSize: number): void {
     stats.detectedLimit = Math.floor(stats.minFailureSize * 0.95);
   }
 
-  stats.detectedLimit = Math.max(MIN_CONTEXT_CHARACTERS, stats.detectedLimit);
+  stats.detectedLimit = Math.max(minimumContextCharacters(model), stats.detectedLimit);
 
   log.info('Recorded success', {
     model,
@@ -154,7 +166,7 @@ export function recordFailure(model: string, promptSize: number): void {
   stats.minFailureSize = Math.min(stats.minFailureSize, promptSize);
 
   const newLimit = Math.floor(promptSize * 0.85);
-  stats.detectedLimit = Math.max(MIN_CONTEXT_CHARACTERS, Math.min(stats.detectedLimit, newLimit));
+  stats.detectedLimit = Math.max(minimumContextCharacters(model), Math.min(stats.detectedLimit, newLimit));
 
   if (stats.detectedLimit < stats.maxSuccessSize) {
     stats.detectedLimit = stats.maxSuccessSize;

@@ -25,8 +25,10 @@ test('Models endpoint returns deepseek-v4-flash and deepseek-v4-flash-thinking',
   assert.ok(body.data.some((m: any) => m.id === 'deepseek-v4-flash'));
   assert.ok(body.data.some((m: any) => m.id === 'deepseek-v4-flash-thinking'));
   const flash = body.data.find((m: any) => m.id === 'deepseek-v4-flash');
+  const flashThinking = body.data.find((m: any) => m.id === 'deepseek-v4-flash-thinking');
   assert.strictEqual(typeof flash.context_length, 'number');
-  assert.ok(flash.context_length > 0);
+  assert.ok(flash.context_length >= 512_000);
+  assert.ok(flashThinking.context_length >= 512_000);
   assert.strictEqual(typeof flash.max_context_tokens, 'number');
 });
 

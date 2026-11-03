@@ -20,12 +20,12 @@
           {
             "name": "deepseek-v4-flash",
             "display_name": "DeepsProxy Flash",
-            "max_tokens": 64000
+            "max_tokens": 512000
           },
           {
             "name": "deepseek-v4-flash-thinking",
             "display_name": "DeepsProxy Thinking",
-            "max_tokens": 64000,
+            "max_tokens": 512000,
             "capabilities": {
               "tools": true,
               "images": false,
