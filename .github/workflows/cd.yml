@@ -1,0 +1,236 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to the production VPS after publishing the images'
+        type: boolean
+        default: false
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  publish:
+    name: Publish images
+    # Publish from this repository only; pull requests never push images.
+    if: github.repository == 'DanielSCaldeira/deepsproxy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute immutable image tag
+        id: tag
+        run: |
+          # Compose interpolates DEEPSPROXY_REGISTRY and DEEPSPROXY_IMAGE_TAG, so
+          # image names are always "<registry>/deepsproxy-<service>:<tag>".
+          echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/deepsproxy-runtime:${{ github.sha }}
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+          provenance: true
+          sbom: true
+
+      - name: Publish worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/deepsproxy-worker:${{ github.sha }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+          provenance: true
+          sbom: true
+
+      - name: Publish egress image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/egress.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/deepsproxy-egress:${{ github.sha }}
+          cache-from: type=gha,scope=egress
+          cache-to: type=gha,mode=max,scope=egress
+          provenance: true
+          sbom: true
+
+      - name: Publish moving tags
+        run: |
+          set -eu
+          if [ "${{ github.ref_type }}" = tag ]; then
+            moving="${{ github.ref_name }}"
+          elif [ "${{ github.ref }}" = refs/heads/main ]; then
+            moving=main
+          else
+            exit 0
+          fi
+          for name in runtime worker egress; do
+            docker buildx imagetools create \
+              --tag "$REGISTRY/$OWNER/deepsproxy-$name:$moving" \
+              "$REGISTRY/$OWNER/deepsproxy-$name:${{ github.sha }}"
+          done
+
+  release:
+    name: Create release
+    needs: publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history is needed to diff against the previous tag.
+          fetch-depth: 0
+
+      - name: Resolve previous tag
+        id: previous
+        run: |
+          previous=$(git describe --tags --abbrev=0 '${{ github.ref_name }}^' 2>/dev/null || true)
+          echo "tag=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+          PREVIOUS_TAG: ${{ steps.previous.outputs.tag }}
+          IMAGE_PREFIX: ${{ env.REGISTRY }}/${{ env.OWNER }}
+        run: |
+          set -eu
+          if [ -n "$PREVIOUS_TAG" ]; then
+            range="$PREVIOUS_TAG..$IMAGE_TAG"
+          else
+            range="$IMAGE_TAG"
+          fi
+          notes=$(mktemp)
+          {
+            echo 'Container images (immutable, tagged with the commit SHA):'
+            echo
+            for name in runtime worker egress; do
+              echo "- \`$IMAGE_PREFIX/deepsproxy-$name:$IMAGE_TAG\`"
+            done
+            echo
+            echo '### Changes'
+            echo
+            git log --no-merges --pretty=format:'- %s (%h)' "$range"
+            echo
+          } > "$notes"
+          gh release create '${{ github.ref_name }}' \
+            --title '${{ github.ref_name }}' \
+            --notes-file "$notes" \
+            --verify-tag
+
+  deploy:
+    name: Deploy to VPS
+    needs: [publish, release]
+    # Deploy when publish succeeded and release either succeeded (tag) or was
+    # skipped (main / manual run). A failed release must not block a deploy.
+    if: >-
+      always() &&
+      needs.publish.result == 'success' &&
+      (needs.release.result == 'success' || needs.release.result == 'skipped') &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.deploy)
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://${{ vars.PRODUCTION_DOMAIN }}
+    steps:
+      - name: Prepare SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Pull and restart the stack
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_REGISTRY: ${{ env.REGISTRY }}/${{ env.OWNER }}
+          IMAGE_TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          # Secrets are passed through the environment and re-quoted remotely so
+          # the token never appears in the workflow log.
+          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
+            "VPS_PATH=\"\$VPS_PATH\" GHCR_USER=\"\$GHCR_USER\" GHCR_TOKEN=\"\$GHCR_TOKEN\" IMAGE_REGISTRY=\"\$IMAGE_REGISTRY\" IMAGE_TAG=\"\$IMAGE_TAG\" sh -s" <<'REMOTE'
+          set -eu
+          cd "$VPS_PATH"
+
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+
+          # Pull first: a failed pull must leave the running stack untouched.
+          for name in runtime worker egress; do
+            docker pull "$IMAGE_REGISTRY/deepsproxy-$name:$IMAGE_TAG"
+          done
+
+          DEEPSPROXY_REGISTRY="$IMAGE_REGISTRY/" DEEPSPROXY_IMAGE_TAG="$IMAGE_TAG" \
+            docker compose --env-file .env.production -f compose.production.yml \
+            up -d --remove-orphans
+          REMOTE
+
+      - name: Wait for gateway health
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
+            "cd \"\$VPS_PATH\" && for i in 1 2 3 4 5 6 7 8 9 10; do \
+              if docker inspect --format '{{.State.Health.Status}}' dsp_gateway 2>/dev/null | grep -qx healthy; then exit 0; fi; \
+              sleep 6; \
+            done; echo 'gateway did not become healthy' >&2; exit 1"

@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Unit tests must never download or launch Chromium. Only the opt-in live
+  # test does that, and it is skipped unless DEEPSPROXY_RUN_LIVE_TESTS=1.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  verify:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Check shell scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck deploy/*.sh
+
+      - name: Validate Compose files
+        run: |
+          # The production compose file uses ${VAR:?} guards, so every secret
+          # must be present for `docker compose config` to resolve.
+          node -e "
+            const fs = require('node:fs');
+            const hex = '0123456789abcdef'.repeat(4);
+            const values = {
+              DOMAIN: 'ci.example.com',
+              POSTGRES_PASSWORD: hex,
+              BOOTSTRAP_TOKEN: hex,
+              PROVISIONER_TOKEN: hex,
+              WORKER_MASTER_SECRET: hex,
+            };
+            let text = fs.readFileSync('.env.production.example', 'utf8');
+            for (const [key, value] of Object.entries(values)) {
+              text = text.replace(new RegExp('^' + key + '=.*$', 'm'), key + '=' + value);
+            }
+            fs.writeFileSync('.env.ci', text);
+          "
+          docker compose --env-file .env.ci -f compose.production.yml config >/dev/null
+          docker compose --env-file .env.ci -f compose.production.yml --profile images config >/dev/null
+          API_KEY=ci-placeholder docker compose -f docker-compose.yml config >/dev/null
+          rm -f .env.ci
+
+  docker:
+    name: Build images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: runtime
+          push: false
+          load: false
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: worker
+          push: false
+          load: false
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Build egress image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/egress.Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=egress
+          cache-to: type=gha,mode=max,scope=egress
+
+      - name: Build local image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=local
+          cache-to: type=gha,mode=max,scope=local

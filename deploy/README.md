@@ -126,6 +126,52 @@ somente contêineres com label `dsp.managed=worker`, preservando volumes. Suba o
 serviços novamente. Migrações são aplicadas antes de aceitar tráfego. Alterações
 de esquema incompatíveis exigem restauração do backup para rollback.
 
+## Integração e entrega contínuas
+
+Os workflows ficam em `.github/workflows` e usam Node 24, a mesma versão das
+imagens de produção.
+
+- `ci.yml` roda em pull requests e em pushes para `main`: instala com `npm ci`,
+  compila com `tsc`, executa `npm test` com `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`
+  (o teste ao vivo é ignorado por padrão), valida os scripts em `deploy/` com
+  `shellcheck`, resolve os três arquivos Compose com segredos fictícios e
+  constrói as quatro imagens (`runtime`, `worker`, `egress` e a local) sem
+  publicar.
+- `cd.yml` publica no GHCR as imagens `deepsproxy-runtime`, `deepsproxy-worker`
+  e `deepsproxy-egress`, sempre marcadas com o SHA do commit. Em `main` e em tags
+  `v*` também aplica a tag móvel (`main` ou o nome da tag). O deploy só ocorre em
+  push para `main`, push de tag `v*` ou execução manual com `deploy` marcado.
+- Ao criar uma tag `v*`, o job `release` publica uma GitHub Release com a lista
+  de mudanças desde a tag anterior (commits sem merge) e os nomes imutáveis das
+  três imagens. Uma falha no release não bloqueia o deploy, e o deploy continua
+  ocorrendo normalmente em `main` e em execuções manuais.
+- `security.yml` roda `npm audit --audit-level=high`, o gitleaks e verificações
+  de hardening: o Compose precisa falhar sem segredos e o `.dockerignore` precisa
+  manter `.env`, `deepseek_profile` e `backups` fora das imagens.
+
+O `compose.production.yml` lê `DEEPSPROXY_REGISTRY` e `DEEPSPROXY_IMAGE_TAG`, com
+padrão vazio e `local`. Sem essas variáveis a VPS continua construindo as imagens
+a partir do código; o pipeline define ambas para consumir as imagens publicadas,
+sem reconstruir nada no servidor.
+
+### Segredos e variáveis do repositório
+
+Crie o environment `production` em Settings → Environments e configure:
+
+| Nome | Tipo | Uso |
+|---|---|---|
+| `VPS_HOST` | secret | Host SSH da VPS |
+| `VPS_USER` | secret | Usuário SSH com acesso ao Docker |
+| `VPS_SSH_KEY` | secret | Chave privada dedicada ao deploy |
+| `VPS_PATH` | secret | Diretório do repositório na VPS, com `.env.production` |
+| `PRODUCTION_DOMAIN` | variable | Só para o link exibido no environment |
+
+O deploy usa `GITHUB_TOKEN` para autenticar no GHCR e o remove ao terminar. A
+VPS precisa apenas de Docker e Compose; o código é atualizado pelas imagens
+publicadas. Faça o pull antes de recriar os serviços, como o workflow faz: uma
+falha de pull não deve derrubar a stack em execução. Workers antigos com label
+`dsp.managed=worker` continuam sendo recriados pelo provisionador sob demanda.
+
 ## Validação
 
 `npm test` inclui PostgreSQL em WebAssembly (PGlite), autenticação, convite,

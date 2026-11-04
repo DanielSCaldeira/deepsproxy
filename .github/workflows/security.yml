@@ -1,0 +1,78 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit (high and critical only)
+        # The proxy has no runtime network surface beyond DeepSeek; moderate
+        # findings in dev-only tooling should not block merges.
+        run: npm audit --audit-level=high
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dockerfile:
+    name: Container hardening checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify production compose fails closed without secrets
+        run: |
+          if docker compose -f compose.production.yml config >/dev/null 2>&1; then
+            echo 'compose.production.yml resolved without secrets; fail-closed requirement broken' >&2
+            exit 1
+          fi
+
+      - name: Verify API_KEY is required by the local compose file
+        run: |
+          if docker compose -f docker-compose.yml config >/dev/null 2>&1; then
+            echo 'docker-compose.yml resolved without API_KEY; fail-closed requirement broken' >&2
+            exit 1
+          fi
+
+      - name: Verify sensitive paths stay out of images
+        run: |
+          for pattern in '.env' 'deepseek_profile' 'backups'; do
+            if ! grep -q "^${pattern//./\\.}" .dockerignore; then
+              echo ".dockerignore does not exclude $pattern" >&2
+              exit 1
+            fi
+          done
