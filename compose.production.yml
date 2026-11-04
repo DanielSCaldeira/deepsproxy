@@ -1,0 +1,96 @@
+name: deepsproxy-production
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      gateway: { condition: service_healthy }
+    restart: unless-stopped
+  gateway:
+    container_name: dsp_gateway
+    build: { context: ., dockerfile: deploy/Dockerfile, target: runtime }
+    image: deepsproxy-runtime:local
+    environment:
+      PUBLIC_ORIGIN: https://${DOMAIN:?Set DOMAIN}
+      DATABASE_URL: postgres://deepsproxy:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/deepsproxy
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:?Set BOOTSTRAP_TOKEN}
+      PROVISIONER_TOKEN: ${PROVISIONER_TOKEN:?Set PROVISIONER_TOKEN}
+      WORKER_MASTER_SECRET: ${WORKER_MASTER_SECRET:?Set WORKER_MASTER_SECRET}
+      MAX_ACTIVE_BROWSERS: ${MAX_ACTIVE_BROWSERS:-5}
+    networks: [edge, control, database]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      postgres: { condition: service_healthy }
+      provisioner: { condition: service_started }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+  provisioner:
+    image: deepsproxy-runtime:local
+    command: [node, dist/production/provisioner.js]
+    user: root
+    environment:
+      PROVISIONER_TOKEN: ${PROVISIONER_TOKEN:?Set PROVISIONER_TOKEN}
+      WORKER_MASTER_SECRET: ${WORKER_MASTER_SECRET:?Set WORKER_MASTER_SECRET}
+      WORKER_IMAGE: deepsproxy-worker:local
+      GATEWAY_CONTAINER: dsp_gateway
+      EGRESS_CONTAINER: dsp_egress
+      MAX_ACTIVE_BROWSERS: ${MAX_ACTIVE_BROWSERS:-5}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [control]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [egress]
+    restart: unless-stopped
+  egress:
+    container_name: dsp_egress
+    build: { context: ., dockerfile: deploy/egress.Dockerfile }
+    volumes:
+      - ./deploy/squid.conf:/etc/squid/squid.conf:ro
+    networks: [outbound]
+    restart: unless-stopped
+  postgres:
+    image: postgres:17.7-bookworm
+    environment:
+      POSTGRES_USER: deepsproxy
+      POSTGRES_DB: deepsproxy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U deepsproxy -d deepsproxy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  worker-image:
+    profiles: [images]
+    image: deepsproxy-worker:local
+    build: { context: ., dockerfile: deploy/Dockerfile, target: worker }
+    entrypoint: ["/bin/true"]
+    network_mode: none
+networks:
+  edge: {}
+  control: { internal: true }
+  database: { internal: true }
+  outbound: {}
+volumes:
+  postgres_data: {}
+  caddy_data: {}
+  caddy_config: {}

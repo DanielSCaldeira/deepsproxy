@@ -1,0 +1,7 @@
+{$DOMAIN} {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000"
+  reverse_proxy gateway:3000 {
+    flush_interval -1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "DeveloperToolsAvailability": 2,
+  "DownloadRestrictions": 3,
+  "AllowFileSelectionDialogs": false,
+  "URLBlocklist": ["file://*", "chrome://*", "devtools://*", "view-source:*"],
+  "PasswordManagerEnabled": false,
+  "BrowserSignin": 0,
+  "PrintingEnabled": false,
+  "DnsOverHttpsMode": "off",
+  "QuicAllowed": false,
+  "WebRtcIPHandlingPolicy": "disable_non_proxied_udp"
+}
