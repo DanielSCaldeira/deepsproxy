@@ -10,10 +10,11 @@ let context: BrowserContext | null = null;
 let activePage: Page | null = null;
 
 const sessionMutex = new Mutex();
+const lifecycleMutex = new Mutex();
 const CHAT_INPUT_SELECTOR = 'textarea:visible, [role="textbox"]:visible, [contenteditable="true"]:visible';
 
-type SessionState = 'not_initialized' | 'authenticated' | 'login_required' | 'unavailable';
-let sessionStatus: { state: SessionState; checkedAt: string | null } = {
+type SessionState = 'not_initialized' | 'authenticated' | 'login_required' | 'suspended' | 'unavailable';
+let sessionStatus: { state: SessionState; checkedAt: string | null; suspendedUntil?: string | null } = {
   state: 'not_initialized', checkedAt: null,
 };
 let lastSavedAt = 0;
@@ -61,6 +62,10 @@ export async function waitForAuthenticatedChat(page: Page): Promise<void> {
 }
 
 export async function initPlaywright(headless = true): Promise<void> {
+  return lifecycleMutex.withLock(() => initializeBrowser(headless));
+}
+
+async function initializeBrowser(headless: boolean): Promise<void> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) return;
 
@@ -76,7 +81,8 @@ export async function initPlaywright(headless = true): Promise<void> {
       channel: 'chromium',
       headless,
       userAgent,
-      args: DEFAULT_LAUNCH_ARGS,
+      args: process.env.APP_MODE === 'worker' ? DEFAULT_LAUNCH_ARGS.filter(arg => arg !== '--no-sandbox').concat(['--disable-quic', '--proxy-bypass-list=<-loopback>']) : DEFAULT_LAUNCH_ARGS,
+      ...(process.env.APP_MODE === 'worker' ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
     });
   } catch (error) {
     await unlock();
@@ -100,7 +106,7 @@ export async function initPlaywright(headless = true): Promise<void> {
 
 export async function saveAuthenticatedSession(): Promise<void> {
   if (!context || !activePage) throw new Error('O navegador da sessão não está disponível.');
-  if (/sign_in|login/.test(new URL(activePage.url()).pathname) ||
+  if (new URL(activePage.url()).hostname !== 'chat.deepseek.com' || /sign_in|login/.test(new URL(activePage.url()).pathname) ||
       !await activePage.locator(CHAT_INPUT_SELECTOR).first().isVisible()) {
     throw new Error('A autenticação ainda não foi confirmada; mantenha o navegador aberto.');
   }
@@ -120,7 +126,8 @@ export async function getSessionStatus() {
         if (activePage) await ensureChatInputReady(activePage);
       } catch (error) {
         sessionStatus = {
-          state: /login is required/.test(String(error)) ? 'login_required' : 'unavailable',
+          ...sessionStatus,
+          state: classifySessionError(String(error)),
           checkedAt: new Date().toISOString(),
         };
       }
@@ -132,6 +139,11 @@ export async function getSessionStatus() {
     sessionSaved: await hasSavedSession(),
     profileInUse: !activePage && await isProfileInUse(),
   };
+}
+
+export function classifySessionError(message: string): SessionState {
+  if (/account is suspended/i.test(message)) return 'suspended';
+  return /login is required/i.test(message) ? 'login_required' : 'unavailable';
 }
 
 export async function closePlaywright(): Promise<void> {
@@ -176,6 +188,17 @@ async function ensureChatInputReady(page: Page): Promise<void> {
   const chatInputSelector = CHAT_INPUT_SELECTOR;
   const timeoutMs = Number(process.env.DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS || '8000');
 
+  const initial = await inspectPageState(page);
+  // A user's conversation can quote a suspension message. Only treat it as
+  // account status before input detection when the chat editor is absent.
+  if (initial.suspended && !await page.locator(CHAT_INPUT_SELECTOR).first().isVisible()) {
+    sessionStatus = { state: 'suspended', checkedAt: new Date().toISOString(), suspendedUntil: initial.suspendedUntil };
+    throw new Error('DeepSeek account is suspended; chat input is unavailable.');
+  }
+  if (new URL(page.url()).hostname !== 'chat.deepseek.com' || /sign_in|login/.test(new URL(page.url()).pathname)) {
+    sessionStatus = { state: 'login_required', checkedAt: new Date().toISOString() };
+    throw new Error('DeepSeek login is required; chat input is unavailable.');
+  }
   try {
     await page.waitForSelector(chatInputSelector, { timeout: timeoutMs });
     sessionStatus = { state: 'authenticated', checkedAt: new Date().toISOString() };
@@ -185,6 +208,7 @@ async function ensureChatInputReady(page: Page): Promise<void> {
   } catch {
     const state = await inspectPageState(page);
     if (state.suspended) {
+      sessionStatus = { state: 'suspended', checkedAt: new Date().toISOString(), suspendedUntil: state.suspendedUntil };
       const detail =
         state.suspensionOriginal ||
         (state.suspendedUntil

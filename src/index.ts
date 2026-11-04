@@ -16,6 +16,7 @@ dotenv.config();
 const log = createLogger('server');
 
 export const app = new Hono();
+let workerReady = false;
 
 function modelEntry(id: string) {
   const dynamicLimit = getContextLength(id);
@@ -54,7 +55,25 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-app.get('/health', (c) => c.json({ status: 'ok' }));
+app.get('/health', (c) => process.env.APP_MODE === 'worker' && (!workerReady || !getActivePage())
+  ? c.json({ status: 'starting' }, 503) : c.json({ status: 'ok' }));
+
+if (process.env.APP_MODE === 'worker') {
+  if (!process.env.API_KEY || process.env.API_KEY.length < 32) throw new Error('Worker requires an internal API_KEY');
+  app.post('/internal/connect', async c => {
+    await initPlaywright(false);
+    const page = getActivePage();
+    if (!page) return c.json({ error: 'browser_unavailable' }, 503);
+    await openDeepSeekChat(page, 20_000);
+    return c.json({ ok: true });
+  });
+  app.post('/internal/confirm', async c => {
+    const status = await getSessionStatus();
+    if (status.state !== 'authenticated') return c.json({ state: status.state }, 409);
+    await saveAuthenticatedSession();
+    return c.json({ ok: true });
+  });
+}
 
 app.get('/api/status', async (c) => {
   c.header('Cache-Control', 'no-store');
@@ -129,8 +148,10 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
   log.info('Server starting', { host: bind.host, port: bind.port });
   let initializing = false;
   let stopping = false;
+  let failures = 0;
   const ensureBrowser = async () => {
     if (initializing || stopping || getActivePage()) return;
+    if (process.env.APP_MODE === 'worker' && failures >= 3) return;
     initializing = true;
     try {
       await initPlaywright(headless);
@@ -139,7 +160,10 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
         if (page) await openDeepSeekChat(page);
       }
       log.info('Playwright initialized');
+      workerReady = true;
+      failures = 0;
     } catch (err: any) {
+      failures++;
       log.error('Failed to initialize playwright', { error: err?.message || String(err) });
     } finally {
       initializing = false;

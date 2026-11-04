@@ -1,7 +1,9 @@
 import { getDeepSeekHeaders, DeepSeekHeaders } from './playwright.ts';
 import { createLogger } from '../utils/logger.ts';
+import { ProxyAgent, fetch as proxyFetch } from 'undici';
 
 const log = createLogger('deepseek');
+const egressProxy = process.env.APP_MODE === 'worker' ? new ProxyAgent('http://egress:3128') : null;
 
 const sessionStates: Record<string, number | null> = (globalThis as any)._sessionStates || {};
 (globalThis as any)._sessionStates = sessionStates;
@@ -88,16 +90,19 @@ export async function createDeepSeekStream(
     pro: isProModel,
   });
 
-  const response = await fetch(DEEPSEEK_CHAT_URL, {
+  const request = {
     method: 'POST',
     headers: buildRequestHeaders(headers),
     body: JSON.stringify(payload),
-  });
+  };
+  const response = egressProxy
+    ? await proxyFetch(DEEPSEEK_CHAT_URL, { ...request, dispatcher: egressProxy })
+    : await fetch(DEEPSEEK_CHAT_URL, request);
 
   if (!response.ok || !response.body) {
     const errText = await response.text().catch(() => '');
     throw new Error(`Failed to fetch from DeepSeek: ${response.status} ${response.statusText} - ${errText}`);
   }
 
-  return { stream: response.body, headers, uiSessionId: chatSessionId };
+  return { stream: response.body as unknown as ReadableStream, headers, uiSessionId: chatSessionId };
 }

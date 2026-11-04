@@ -3,6 +3,8 @@ dist/
 deepseek_profile/
 .env
 .env.local
+.env.production
+backups/
 *.log
 .DS_Store
 coverage/

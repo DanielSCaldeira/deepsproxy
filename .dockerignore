@@ -2,6 +2,8 @@ node_modules
 dist
 deepseek_profile
 .env
+.env.*
+backups
 .git
 .gitignore
 README.md

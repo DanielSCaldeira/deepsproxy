@@ -8,7 +8,10 @@
     "login": "npx tsx src/login.ts",
     "test": "tsx --test src/**/*.test.ts",
     "test:live-context": "tsx scripts/smoke-context-summary.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "start:production": "node dist/production/server.js",
+    "start:provisioner": "node dist/production/provisioner.js",
+    "preview": "tsx scripts/preview-panel.ts"
   },
   "keywords": [],
   "author": "Pedro Farias",
@@ -16,16 +19,24 @@
   "dependencies": {
     "@hono/node-server": "^2.0.2",
     "@hono/swagger-ui": "^0.6.1",
+    "@novnc/novnc": "^1.7.0",
+    "argon2": "^0.45.2",
     "dotenv": "^17.4.2",
     "hono": "^4.12.18",
     "hono-openapi": "^1.3.0",
+    "pg": "^8.23.1",
     "playwright": "^1.59.1",
+    "undici": "^7.30.1",
     "uuid": "^14.0.0",
+    "ws": "^8.22.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@types/node": "^25.6.2",
+    "@types/pg": "^8.23.1",
     "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   },

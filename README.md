@@ -1,5 +1,9 @@
 # DeepsProxy
 
+Para publicar com painel multiusuário, login remoto no DeepSeek e chaves
+individuais, siga o [guia de produção](deploy/README.md). Cada usuário acompanha
+o status da própria conta pelo site. O modo local abaixo continua disponível.
+
 Proxy local compatível com a API OpenAI que roteia requisições para o DeepSeek via automação de navegador (Playwright). Esta é uma fork endurecida do projeto original com foco em concorrência, segurança e operabilidade.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)](https://www.typescriptlang.org/)
