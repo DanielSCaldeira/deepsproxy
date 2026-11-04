@@ -6,7 +6,7 @@
   "scripts": {
     "start": "npx tsx src/index.ts",
     "login": "npx tsx src/login.ts",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "tsx --test --test-force-exit src/**/*.test.ts",
     "test:live-context": "tsx scripts/smoke-context-summary.ts",
     "build": "tsc",
     "start:production": "node dist/production/server.js",
