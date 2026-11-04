@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Message } from './types.ts';
 import { createLogger } from './logger.ts';
+import { isTerminalGenerationError } from '../services/generation-guard.ts';
 
 const log = createLogger('context-summary');
 const DEFAULT_TRIGGER_RATIO = 0.72;
@@ -164,6 +165,7 @@ export async function summarizeOlderContext(
       if (!rollingSummary) throw new Error('Summary model returned empty content');
     }
   } catch (error: any) {
+    if (isTerminalGenerationError(error)) throw error;
     log.warn('Automatic context summary failed; using regular compression', {
       model,
       error: error?.message || String(error),

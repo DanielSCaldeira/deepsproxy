@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { updateSessionParent } from '../services/deepseek.ts';
 import { ChoiceDelta, ToolCall, Usage, ToolChoice } from '../utils/types.ts';
 import { createLogger } from '../utils/logger.ts';
+import { diagnostic } from '../utils/diagnostics.ts';
 import {
   TOOL_START,
   toolEndTag,
@@ -59,6 +60,7 @@ export async function peekStream(
   try {
     const { done, value } = await reader.read();
     if (done) {
+      reader.releaseLock();
       return {
         isEmpty: true,
         peekedStream: new ReadableStream({
@@ -70,25 +72,25 @@ export async function peekStream(
     }
 
     const peekedStream = new ReadableStream({
-      async start(controller) {
-        controller.enqueue(value);
+      start(controller) { controller.enqueue(value); },
+      async pull(controller) {
         try {
-          while (true) {
             const { done: nextDone, value: nextValue } = await reader.read();
             if (nextDone) {
+              reader.releaseLock();
               controller.close();
-              break;
+              return;
             }
             controller.enqueue(nextValue);
-          }
         } catch (err) {
+          reader.releaseLock();
           controller.error(err);
         }
       },
-      cancel() {
-        reader.releaseLock();
+      async cancel(reason) {
+        try { await reader.cancel(reason); } finally { reader.releaseLock(); }
       },
-    });
+    }, { highWaterMark: 0 });
 
     return { isEmpty: false, peekedStream };
   } catch (err) {
@@ -172,6 +174,7 @@ export async function parseDeepSeekStreamToOpenAI(
     }
   };
 
+  try {
   while (true) {
     const { done, value } = await reader.read();
     if (done && !buffer) break;
@@ -189,6 +192,9 @@ export async function parseDeepSeekStreamToOpenAI(
 
       try {
         const chunk = JSON.parse(dataStr);
+        // Only numeric protocol codes; text fields may contain conversation data.
+        if (typeof chunk.code === 'number' && chunk.code !== 0) diagnostic('stream.code', { code: chunk.code });
+        if (typeof chunk.biz_code === 'number' && chunk.biz_code !== 0) diagnostic('stream.code', { code: chunk.biz_code });
         let dsMessageId: any = null;
         if (chunk.response_message_id) {
           dsMessageId = chunk.response_message_id;
@@ -349,4 +355,8 @@ export async function parseDeepSeekStreamToOpenAI(
     finishReason: emittedToolCallCount > 0 ? 'tool_calls' : 'stop',
     usage,
   };
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }

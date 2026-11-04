@@ -157,6 +157,7 @@ export function recordSuccess(model: string, promptSize: number): void {
     promptChars: promptSize,
     detectedLimitChars: stats.detectedLimit,
     detectedLimitTokens: Math.ceil(stats.detectedLimit / 3.5),
+    limitSource: 'configured_or_estimated',
   });
   schedulePersist();
 }

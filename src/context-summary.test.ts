@@ -111,3 +111,13 @@ test('summary failure falls back to the original history', async () => {
 
   assert.strictEqual(result, messages);
 });
+
+test('terminal summary failures end the request instead of falling back to another generation', async () => {
+  for (const message of ['Timeout waiting for PoW headers', 'DeepSeek login is required', 'DeepSeek account is suspended']) {
+    const failure = new Error(message);
+    await assert.rejects(summarizeOlderContext(longConversation(), {
+      model: `summary-terminal-${message}`, targetLimit: 1000, measure,
+      serialize: serializeOpenAIMessages, summarize: async () => { throw failure; },
+    }), error => error === failure);
+  }
+});

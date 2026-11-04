@@ -7,7 +7,7 @@ import { ActionPacer, getActionDelayRange } from './services/action-pacing.ts';
 import { initPlaywright, getActivePage, getDeepSeekHeaders, closePlaywright } from './services/playwright.ts';
 
 test('pacing defaults and custom ranges reject invalid configuration', () => {
-  const defaults = { minMs: 3000, maxMs: 7000 };
+  const defaults = { minMs: 10000, maxMs: 15000 };
   assert.deepEqual(getActionDelayRange({}), defaults);
   assert.deepEqual(getActionDelayRange({ DEEPSPROXY_ACTION_DELAY_MIN_MS: '5000', DEEPSPROXY_ACTION_DELAY_MAX_MS: '9000' }), { minMs: 5000, maxMs: 9000 });
   assert.deepEqual(getActionDelayRange({ DEEPSPROXY_ACTION_DELAY_MIN_MS: '0', DEEPSPROXY_ACTION_DELAY_MAX_MS: '0' }), { minMs: 0, maxMs: 0 });

@@ -10,6 +10,7 @@ import { getContextLength } from './services/telemetry.ts';
 import { createLogger } from './utils/logger.ts';
 import { openApiSpec } from './openapi.ts';
 import { statusPage } from './routes/status.ts';
+import { diagnostic, flushDiagnostics } from './utils/diagnostics.ts';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ function modelEntry(id: string) {
     max_context_tokens: dynamicLimit,
     max_input_tokens: dynamicLimit,
     max_output_tokens: 8_000,
+    context_limit_source: 'configured_or_estimated',
   };
 }
 
@@ -68,9 +70,8 @@ if (process.env.APP_MODE === 'worker') {
     return c.json({ ok: true });
   });
   app.post('/internal/confirm', async c => {
-    const status = await getSessionStatus();
-    if (status.state !== 'authenticated') return c.json({ state: status.state }, 409);
-    await saveAuthenticatedSession();
+    try { await saveAuthenticatedSession(true); }
+    catch { return c.json({ state: (await getSessionStatus()).state }, 409); }
     return c.json({ ok: true });
   });
 }
@@ -142,6 +143,7 @@ function resolveBindDecision(): BindDecision {
 }
 
 export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 'false') {
+  diagnostic('process.started', { headless });
   const bind = resolveBindDecision();
 
   const server = serve({ fetch: app.fetch, port: bind.port, hostname: bind.host });
@@ -153,6 +155,7 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
     if (initializing || stopping || getActivePage()) return;
     if (process.env.APP_MODE === 'worker' && failures >= 3) return;
     initializing = true;
+    diagnostic('browser.recovery', { attempt: failures + 1 });
     try {
       await initPlaywright(headless);
       if (!headless) {
@@ -169,19 +172,30 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
       initializing = false;
     }
   };
-  void ensureBrowser();
+  server.once('listening', () => { void ensureBrowser(); });
   const recovery = setInterval(() => void ensureBrowser(), 15_000);
   recovery.unref();
   const shutdown = async () => {
     stopping = true;
+    diagnostic('process.stopping');
     clearInterval(recovery);
     server.close();
     await saveAuthenticatedSession().catch(() => undefined);
     await closePlaywright();
+    await flushDiagnostics();
     process.exit(0);
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+  server.once('error', (error: NodeJS.ErrnoException) => {
+    stopping = true;
+    clearInterval(recovery);
+    process.removeListener('SIGINT', shutdown);
+    process.removeListener('SIGTERM', shutdown);
+    if (error.code === 'EADDRINUSE') log.error('Porta já ocupada. Encerre a outra instância do proxy ou configure PORT.', { host: bind.host, port: bind.port });
+    else log.error('Não foi possível iniciar o servidor.', { code: error.code });
+    void closePlaywright().finally(() => { process.exitCode = 1; });
+  });
   return server;
 }
 

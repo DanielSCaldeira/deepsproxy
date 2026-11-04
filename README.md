@@ -18,7 +18,8 @@ Proxy local compatível com a API OpenAI que roteia requisições para o DeepSee
 - **OpenAI API compatible**: `/v1/chat/completions` (stream e non-stream) + `/v1/models`
 - **Tool calling**: parser tolerante de `<tool_call>` em JSON/XML estilo Hermes e conversão de DSML do DeepSeek para `tool_calls`, em stream e non-stream
 - **Entrada compacta**: preserva instruções e contexto útil do cliente, omite raciocínio anterior e envia catálogo de ferramentas em JSON compacto
-- **Pausas internas aleatórias**: espera de 3 a 7 segundos antes de abrir o navegador/conversa e antes de enviar uma mensagem, inclusive em resumos e novas tentativas. Ajuste `DEEPSPROXY_ACTION_DELAY_MIN_MS` e `DEEPSPROXY_ACTION_DELAY_MAX_MS` no `.env` (ambos `0` desativam). As pausas reduzem a frequência das ações; não garantem ausência de bloqueios pelo serviço.
+- **Pausas internas aleatórias**: uma geração por vez, incluindo resumos e retries. Após conclusão, falha ou cancelamento, sorteia uma nova pausa uniforme de **15 a 30 segundos** antes da próxima geração. Ajuste `DEEPSPROXY_REQUEST_DELAY_MIN_MS` e `DEEPSPROXY_REQUEST_DELAY_MAX_MS` no `.env`. Além disso, cada ação de navegador aguarda **10 a 15 segundos**, configuráveis por `DEEPSPROXY_ACTION_DELAY_MIN_MS` e `DEEPSPROXY_ACTION_DELAY_MAX_MS`. Cada par pode ser desativado com ambos os valores em `0`. As pausas reduzem a frequência das ações; não garantem ausência de bloqueios pelo serviço.
+- **Interrupção após bloqueios**: suspensão e login pendente interrompem tentativas e bloqueiam novos envios antes de navegação ou resumo. A pausa restante e o bloqueio persistem em `<profile>/.generation-state.json`. Para retomar, execute `make login` e conclua a autenticação interativa; a data exibida pelo DeepSeek não dispara retomada automática. HTTP 429 respeita `Retry-After`, mesmo quando exige mais de 30 segundos. `/api/status` informa `deepseek.block`, `deepseek.nextAllowedAt`, `deepseek.busy` e `deepseek.queued`.
 - **Controle de ferramentas**: respeita `tool_choice`; DSML inválido sem chamadas válidas retorna `invalid_tool_call` (HTTP 502 ou evento de erro SSE), sem executar comandos incompletos. A recuperação XML/Hermes existente permanece compatível.
 - **Streaming SSE** correto, com extração de `reasoning_content` para modelos thinking
 - **Resumo automático de contexto**: preserva decisões e pendências das mensagens antigas, mantém os turnos recentes e usa compressão como fallback
@@ -94,6 +95,29 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 ```
 
 ---
+
+## Diagnóstico de perda de login
+
+No uso local, o proxy grava automaticamente `logs/deepsproxy-diagnostic.log`, inclusive quando iniciado em segundo plano pelo Zed. O arquivo é criado no primeiro evento; caminhos relativos partem da raiz do projeto. Reinicie o proxy após atualizar o código para começar a coleta. O log independe de `LOG_LEVEL` e da saída do console.
+
+Cada linha é um objeto JSON com horário UTC, processo, `runId` e evento. `requestId` acompanha uma chamada do cliente; `operationId` distingue a resposta principal dos resumos internos (`operation: summary`), e `attempt` identifica as tentativas. Eventos do navegador fora de uma chamada podem não ter `requestId`.
+
+Para investigar, use o Zed normalmente até o problema reaparecer e procure a sequência anterior à falha: `session.transition` e seu `reason`, `browser.navigation` com rota `login`, status de `upstream.response` e `browser.network_response`, `capture.failed` e `browser.closed`. O aborto `capture.intentional_abort` faz parte da captura de PoW. Um status 401/403/429 isolado não determina expiração, suspensão ou bloqueio; compare os demais sinais. `request.finished` encerra a chamada, enquanto `stream.finished` encerra a leitura do upstream.
+
+O arquivo aceita apenas campos de diagnóstico predefinidos: durações, contagens, status, categorias fixas e presença de credenciais como booleanos. Não grava conversas, IDs reais dos chats, credenciais, corpos de erro, conteúdo da página ou URLs completas. Os logs de console existentes continuam com seu comportamento atual.
+
+Ao atingir 10 MB, o arquivo é rotacionado para `deepsproxy-diagnostic.1.log`, mantendo até três anteriores, aproximadamente 40 MB no total. Esses arquivos são ignorados pelo Git. Erros de disco ou uma fila cheia geram aviso no console e podem perder eventos, sem interromper o proxy.
+
+Configure no `.env` se necessário:
+
+```dotenv
+# Desativar o diagnóstico persistente:
+DEEPSPROXY_DIAGNOSTICS=0
+# Ou escolher outro destino:
+DEEPSPROXY_DIAGNOSTICS_FILE=logs/deepsproxy-diagnostic.log
+```
+
+Em workers e testes automatizados o diagnóstico fica desativado por padrão; `DEEPSPROXY_DIAGNOSTICS=1` permite ativá-lo explicitamente. Esta instrumentação preserva a política atual de login, pausas e repetição de chamadas. A causa da perda de login será avaliada após capturar uma ocorrência real.
 
 ## Configuracao da extensao Continue
 
@@ -185,7 +209,11 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `DEEPSEEK_PROFILE_DIR` | `deepseek_profile` | Pasta do perfil persistente do Chromium |
 | `DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS` | `8000` | Tempo limite p/ aparecer o input do chat |
 | `DEEPSPROXY_POW_TIMEOUT_MS` | `30000` | Tempo limite p/ capturar PoW |
-| `DEEPSPROXY_MAX_ATTEMPTS` | `3` | Retries por request |
+| `DEEPSPROXY_REQUEST_DELAY_MIN_MS` | `15000` | Menor pausa entre gerações, contada após encerramento |
+| `DEEPSPROXY_REQUEST_DELAY_MAX_MS` | `30000` | Maior pausa sorteada entre gerações |
+| `DEEPSPROXY_ACTION_DELAY_MIN_MS` | `10000` | Menor pausa antes de cada ação do navegador |
+| `DEEPSPROXY_ACTION_DELAY_MAX_MS` | `15000` | Maior pausa antes de cada ação do navegador |
+| `DEEPSPROXY_MAX_ATTEMPTS` | `1` | Total de tentativas por pedido (1–10); autenticação, suspensão e timeout de PoW não têm retry |
 | `DEEPSPROXY_RETRY_DELAY_MS` | `1000` | Backoff entre tentativas |
 | `DEEPSPROXY_SUMMARY_TRIGGER_RATIO` | `0.72` | Fração do limite detectado que dispara resumo automático (entre `0.5` e `0.9`) |
 | `DEEPSPROXY_TELEMETRY_FILE` | `<profile>/.telemetry.json` | Onde a telemetria persiste |
@@ -195,6 +223,12 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `DEEPSEEK_CLIENT_LOCALE` | `pt_BR` | Header `x-client-locale` |
 | `DEEPSEEK_ACCEPT_LANGUAGE` | `pt-BR,...` | Header `accept-language` |
 | `DEEPSEEK_USER_AGENT` | Chrome 130 desktop | UA do Chromium embarcado |
+
+O limite de contexto divulgado por `/v1/models` é configurado ou estimado (`context_limit_source: configured_or_estimated`). O piso de 512 mil tokens do Flash não é uma capacidade comprovada a cada envio. Falhas de rede, autenticação e suspensão não reduzem a estimativa. Em streaming, a telemetria só registra sucesso após concluir o processamento da resposta.
+
+Erros de `/v1/chat/completions` mantêm `error.message`, `error.type` e `error.code` e incluem `error.original_message` (quando disponível), `error.user_action` e `error.help_url` (quando há um site a acessar). A própria `message` contém o erro, a orientação e o link para clientes que exibem apenas esse campo. Suspensões também informam `suspended_until` quando a data foi capturada; limites de frequência incluem `retry_at`. O aviso original da suspensão é preservado após reinício. O login deve ser concluído na janela aberta por `make login`: abrir o site em outro navegador não autentica o perfil do proxy. Falhas depois do início do streaming são enviadas como um evento SSE `data: {"error": ...}`, seguido de `[DONE]`.
+
+Se aparecer `Porta já ocupada`, encerre a outra instância do proxy ou altere `PORT`. `make login` já mantém uma API usando o navegador aberto; não inicie uma segunda instância sobre a mesma porta ou perfil.
 
 ---
 

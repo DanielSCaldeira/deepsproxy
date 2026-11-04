@@ -1,6 +1,9 @@
 import { getDeepSeekHeaders, DeepSeekHeaders } from './playwright.ts';
 import { createLogger } from '../utils/logger.ts';
 import { ProxyAgent, fetch as proxyFetch } from 'undici';
+import { diagnostic, diagnosticContext, diagnosticError } from '../utils/diagnostics.ts';
+import { getGenerationGuard, generationSignal, UpstreamError, retryAfterMilliseconds } from './generation-guard.ts';
+import { upstreamMessage } from '../utils/api-error.ts';
 
 const log = createLogger('deepseek');
 const egressProxy = process.env.APP_MODE === 'worker' ? new ProxyAgent('http://egress:3128') : null;
@@ -32,6 +35,61 @@ export interface DeepSeekStreamResult {
 }
 
 const DEEPSEEK_CHAT_URL = 'https://chat.deepseek.com/api/v0/chat/completion';
+let lastDispatchAt: number | undefined;
+
+/** Observe reads without buffering, consuming extra chunks or changing cancellation. */
+export function observeDeepSeekStream(stream: ReadableStream, finish: () => void = () => {}, signal?: AbortSignal): ReadableStream {
+  const trace = { ...diagnosticContext() };
+  const started = Date.now();
+  const reader = stream.getReader();
+  let finished = false;
+  let empty = true;
+  let output: ReadableStreamDefaultController;
+  const cleanup = () => { signal?.removeEventListener('abort', abort); finish(); };
+  const abort = () => {
+    if (finished) return;
+    finished = true;
+    void reader.cancel(signal?.reason).catch(() => undefined).finally(() => reader.releaseLock());
+    output.error(signal?.reason);
+    cleanup();
+  };
+  diagnostic('stream.started', {}, trace);
+  return new ReadableStream({
+    start(controller) {
+      output = controller;
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort();
+    },
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (finished) return;
+        if (next.done) {
+          finished = true;
+          diagnostic('stream.finished', { durationMs: Date.now() - started, outcome: empty ? 'empty' : 'ok' }, trace);
+          reader.releaseLock();
+          controller.close();
+          cleanup();
+        } else {
+          if (next.value?.byteLength) empty = false;
+          controller.enqueue(next.value);
+        }
+      } catch (error) {
+        if (finished) return;
+        finished = true;
+        diagnostic('stream.failed', { durationMs: Date.now() - started, category: diagnosticError(error) }, trace);
+        reader.releaseLock();
+        controller.error(error);
+        cleanup();
+      }
+    },
+    async cancel(reason) {
+      finished = true;
+      diagnostic('stream.cancelled', { durationMs: Date.now() - started }, trace);
+      try { await reader.cancel(reason); } finally { reader.releaseLock(); cleanup(); }
+    },
+  }, { highWaterMark: 0 });
+}
 
 function buildRequestHeaders(headers: DeepSeekHeaders): Record<string, string> {
   const appVersion = process.env.DEEPSEEK_APP_VERSION || '2.0.0';
@@ -62,7 +120,19 @@ export async function createDeepSeekStream(
   isProModel: boolean = false,
   forcedParentId?: number | null
 ): Promise<DeepSeekStreamResult> {
+  const guard = getGenerationGuard();
+  const signal = generationSignal();
+  const release = await guard.acquire(signal);
+  try {
+    return await dispatchDeepSeekStream(prompt, enableThinking, isProModel, forcedParentId, release, signal);
+  } catch (error) { release(); throw error; }
+}
+
+async function dispatchDeepSeekStream(prompt: string, enableThinking: boolean, isProModel: boolean,
+  forcedParentId: number | null | undefined, release: () => void, signal?: AbortSignal): Promise<DeepSeekStreamResult> {
   const { headers, chatSessionId, parentMessageId } = await getDeepSeekHeaders(forcedParentId === null);
+  signal?.throwIfAborted();
+  getGenerationGuard().assertAllowed();
 
   let actualParentId: number | null = parentMessageId;
   if (forcedParentId !== undefined) {
@@ -94,15 +164,34 @@ export async function createDeepSeekStream(
     method: 'POST',
     headers: buildRequestHeaders(headers),
     body: JSON.stringify(payload),
+    signal,
   };
-  const response = egressProxy
-    ? await proxyFetch(DEEPSEEK_CHAT_URL, { ...request, dispatcher: egressProxy })
-    : await fetch(DEEPSEEK_CHAT_URL, request);
+  const started = Date.now();
+  diagnostic('upstream.started', { route: 'chat_completion', promptChars: prompt.length, thinking: enableThinking, pro: isProModel,
+    ...(lastDispatchAt === undefined ? {} : { intervalMs: started - lastDispatchAt }) });
+  lastDispatchAt = started;
+  let response;
+  try {
+    response = egressProxy
+      ? await proxyFetch(DEEPSEEK_CHAT_URL, { ...request, dispatcher: egressProxy })
+      : await fetch(DEEPSEEK_CHAT_URL, request);
+  } catch (error) {
+    diagnostic('upstream.failed', { category: diagnosticError(error), durationMs: Date.now() - started });
+    throw error;
+  }
+  diagnostic('upstream.response', { route: 'chat_completion', status: response.status, durationMs: Date.now() - started });
 
   if (!response.ok || !response.body) {
     const errText = await response.text().catch(() => '');
-    throw new Error(`Failed to fetch from DeepSeek: ${response.status} ${response.statusText} - ${errText}`);
+    const originalMessage = upstreamMessage(errText);
+    const guard = getGenerationGuard();
+    if (response.status === 401) guard.block({ state: 'login_required', originalMessage });
+    if (response.status === 403 && /suspend|suspens|suspensa/i.test(originalMessage ?? '')) guard.block({ state: 'suspended', originalMessage });
+    if (response.status === 429) guard.defer(retryAfterMilliseconds(response.headers.get('retry-after')));
+    guard.assertAllowed();
+    throw new UpstreamError(`Failed to fetch from DeepSeek: ${response.status} ${response.statusText}`, response.status,
+      response.status === 429 || response.status >= 500, originalMessage);
   }
 
-  return { stream: response.body as unknown as ReadableStream, headers, uiSessionId: chatSessionId };
+  return { stream: observeDeepSeekStream(response.body as unknown as ReadableStream, release, signal), headers, uiSessionId: chatSessionId };
 }

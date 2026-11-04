@@ -1,3 +1,11 @@
+const actionableErrorFields = {
+  original_message: { type: 'string', nullable: true, description: 'Original upstream error when available; null if it was not captured.' },
+  user_action: { type: 'string', description: 'Instructions for resolving the error.' },
+  help_url: { type: 'string', format: 'uri', nullable: true, description: 'Direct link when the user needs to visit a site.' },
+  suspended_until: { type: 'string', description: 'Suspension deadline as displayed by DeepSeek; timezone may be unspecified.' },
+  retry_at: { type: 'string', format: 'date-time', nullable: true },
+};
+
 export const openApiSpec = {
   openapi: '3.0.0',
   info: {
@@ -27,6 +35,12 @@ export const openApiSpec = {
       },
     },
     schemas: {
+      ActionableError: {
+        type: 'object', properties: { error: { type: 'object', properties: {
+          message: { type: 'string', description: 'Error, user instructions and relevant link in one displayable message.' },
+          type: { type: 'string' }, code: { type: 'string' }, ...actionableErrorFields,
+        } } },
+      },
       Model: {
         type: 'object',
         properties: {
@@ -38,6 +52,7 @@ export const openApiSpec = {
           max_context_tokens: { type: 'integer', example: 65536 },
           max_input_tokens: { type: 'integer', example: 65536 },
           max_output_tokens: { type: 'integer', example: 8000 },
+          context_limit_source: { type: 'string', enum: ['configured_or_estimated'] },
         },
       },
       Message: {
@@ -263,12 +278,20 @@ export const openApiSpec = {
               'text/event-stream': {
                 schema: {
                   type: 'string',
-                  description: 'SSE stream of `data: {...}` chunks, terminated with `data: [DONE]`',
+                  description: 'SSE stream of `data: {...}` chunks, terminated with `data: [DONE]`. Failures after streaming starts emit an ActionableError envelope before [DONE].',
                 },
               },
             },
           },
-          '401': { $ref: '#/components/responses/Unauthorized' },
+          '401': {
+            description: 'Missing/invalid API key, or DeepSeek login required. Login errors include user instructions and a direct link.',
+            content: { 'application/json': { schema: { oneOf: [
+              { type: 'object', properties: { error: { type: 'string' } } },
+              { $ref: '#/components/schemas/ActionableError' },
+            ] } } },
+          },
+          '429': { description: 'DeepSeek rate limit; retry_at reports the next permitted attempt.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ActionableError' } } } },
           '403': {
             description: 'DeepSeek account is suspended',
             content: {
@@ -282,6 +305,7 @@ export const openApiSpec = {
                         message: { type: 'string' },
                         type: { type: 'string', example: 'deepseek_account_suspended' },
                         code: { type: 'string', example: 'deepseek_account_suspended' },
+                        ...actionableErrorFields,
                       },
                     },
                   },
@@ -302,6 +326,7 @@ export const openApiSpec = {
                         message: { type: 'string' },
                         type: { type: 'string', example: 'deepseek_chat_unavailable' },
                         code: { type: 'string', example: 'deepseek_chat_unavailable' },
+                        ...actionableErrorFields,
                       },
                     },
                   },
@@ -322,6 +347,7 @@ export const openApiSpec = {
                         message: { type: 'string' },
                         type: { type: 'string', example: 'upstream_error' },
                         code: { type: 'string', example: 'upstream_error' },
+                        ...actionableErrorFields,
                       },
                     },
                   },

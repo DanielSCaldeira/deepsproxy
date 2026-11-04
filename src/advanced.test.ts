@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert';
 
 process.env.TEST_MOCK_PLAYWRIGHT = 'true';
+process.env.DEEPSPROXY_REQUEST_DELAY_MIN_MS = '0';
+process.env.DEEPSPROXY_REQUEST_DELAY_MAX_MS = '0';
+process.env.DEEPSPROXY_DISABLE_TELEMETRY_PERSIST = '1';
 
 import { app } from './index.ts';
 
@@ -467,6 +470,8 @@ test('compression: compressMessages trims older conversational history', async (
 });
 
 test('telemetry and retry: reduces context limit on empty/error response and retries with compressed context', async () => {
+  const previousAttempts = process.env.DEEPSPROXY_MAX_ATTEMPTS;
+  process.env.DEEPSPROXY_MAX_ATTEMPTS = '3';
   let attempts: number[] = [];
   const restore = setupFetchMock((url, init) => {
     const bodyObj = JSON.parse(init?.body as string || '{}');
@@ -521,6 +526,8 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
     assert.ok(stats.minFailureSize < Infinity, 'Should have recorded a failure');
     assert.ok(stats.detectedLimit < 60000, 'Detected limit should be reduced');
   } finally {
+    if (previousAttempts === undefined) delete process.env.DEEPSPROXY_MAX_ATTEMPTS;
+    else process.env.DEEPSPROXY_MAX_ATTEMPTS = previousAttempts;
     restore();
   }
 });

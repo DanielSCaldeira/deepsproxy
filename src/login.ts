@@ -22,8 +22,8 @@ async function main(): Promise<void> {
   await openDeepSeekChat(page);
   log.info('Faça login nesta janela do DeepSeek. O navegador permanecerá aberto e será usado pela API.');
   await waitForAuthenticatedChat(page);
-  log.info('Login confirmado. Salvando a sessão do navegador.');
-  await saveAuthenticatedSession();
+  await saveAuthenticatedSession(true);
+  log.info('Login confirmado e sessão salva.');
   log.info('Sessão salva. O proxy está usando este mesmo navegador. Não é necessário executar npm start.');
 }
 

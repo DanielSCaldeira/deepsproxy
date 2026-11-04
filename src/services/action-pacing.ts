@@ -1,8 +1,11 @@
 import { Mutex } from '../utils/mutex.ts';
 import { createLogger } from '../utils/logger.ts';
+import { diagnostic } from '../utils/diagnostics.ts';
+import { setTimeout as abortableSleep } from 'node:timers/promises';
+import { generationSignal } from './generation-guard.ts';
 
 const log = createLogger('pacing');
-const DEFAULT_RANGE = { minMs: 3_000, maxMs: 7_000 };
+const DEFAULT_RANGE = { minMs: 10_000, maxMs: 15_000 };
 const MAX_DELAY_MS = 60_000;
 
 export interface ActionDelayRange {
@@ -24,7 +27,7 @@ export class ActionPacer {
   private readonly mutex = new Mutex();
 
   constructor(
-    private readonly sleep: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    private readonly sleep: (ms: number) => Promise<void> = ms => abortableSleep(ms, undefined, { signal: generationSignal() }),
     private readonly random: () => number = Math.random,
   ) {}
 
@@ -34,6 +37,7 @@ export class ActionPacer {
       const delayMs = range.minMs + Math.floor(this.random() * (range.maxMs - range.minMs + 1));
       if (delayMs === 0) return;
       log.info('Waiting before DeepSeek action', { action, delayMs });
+      diagnostic('action.wait', { action, delayMs });
       await this.sleep(delayMs);
     });
   }

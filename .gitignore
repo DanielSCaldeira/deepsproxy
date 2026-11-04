@@ -11,3 +11,9 @@ coverage/
 .cache/
 .kilo
 start-deepsproxy.sh
+
+# Local SSH key files
+/ampere-a1.pem
+/ampere-a1.pub
+/ssh-key-2026-11-04.key
+/ssh-key-2026-11-04.key.pub

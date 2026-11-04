@@ -14,15 +14,15 @@ permissions:
   contents: read
 
 env:
-  # Unit tests must never download or launch Chromium. Only the opt-in live
-  # test does that, and it is skipped unless DEEPSPROXY_RUN_LIVE_TESTS=1.
-  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  # The browser tests launch the Chromium that ships with the pinned Playwright
+  # release. They never reach DeepSeek: routes are intercepted locally.
+  PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
 
 jobs:
   verify:
     name: Build and test
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +33,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
 
       - name: Type-check and build
         run: npm run build

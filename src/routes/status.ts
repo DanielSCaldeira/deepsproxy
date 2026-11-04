@@ -70,12 +70,17 @@ export const statusPage = String.raw`<!doctype html>
       const states = {
         authenticated:['Conectada','good','Login reconhecido pelo DeepSeek.'],
         login_required:['Login necessário','warn','A sessão precisa ser autenticada novamente.'],
+        suspended:['Conta suspensa','bad','O DeepSeek suspendeu a conta. Os envios estão interrompidos.'],
         not_initialized:['Aguardando navegador','warn','O navegador do proxy ainda não está disponível.'],
         unavailable:['Indisponível','bad','Não foi possível verificar o chat do DeepSeek.']
       };
       const state = data.deepseek.profileInUse ? ['Perfil em uso','warn','Outro processo está usando o perfil do DeepSeek.'] : states[data.deepseek.state] || states.unavailable;
       value('session',state[0],state[1]);
       el('session-detail').textContent = state[2] + (data.deepseek.busy ? ' Há uma consulta em andamento.' : '');
+      if (data.deepseek.suspendedUntil) el('session-detail').textContent += ' Suspensão informada até ' + data.deepseek.suspendedUntil + '.';
+      if (data.deepseek.nextAllowedAt && new Date(data.deepseek.nextAllowedAt) > new Date()) {
+        el('session-detail').textContent += ' Próximo envio permitido a partir de ' + new Date(data.deepseek.nextAllowedAt).toLocaleTimeString('pt-BR') + '.';
+      }
       value('saved',data.deepseek.sessionSaved ? 'Salva neste computador' : 'Ainda não salva',data.deepseek.sessionSaved ? 'good' : 'warn');
       el('saved-detail').textContent = data.deepseek.sessionSaved ? 'A sessão será reutilizada ao reiniciar. O DeepSeek pode exigir novo login se ela expirar.' : 'O login será salvo após confirmar a autenticação.';
       if (data.deepseek.profileInUse) {

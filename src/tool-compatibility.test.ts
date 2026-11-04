@@ -6,6 +6,9 @@ import { ToolCallError, parseDSMLToolCalls } from './routes/tool-parser.ts';
 import type { OpenAIRequest, ToolChoice } from './utils/types.ts';
 
 process.env.TEST_MOCK_PLAYWRIGHT = 'true';
+process.env.DEEPSPROXY_REQUEST_DELAY_MIN_MS = '0';
+process.env.DEEPSPROXY_REQUEST_DELAY_MAX_MS = '0';
+process.env.DEEPSPROXY_DISABLE_TELEMETRY_PERSIST = '1';
 const { app } = await import('./index.ts');
 
 const tools = [{
