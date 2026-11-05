@@ -1,4 +1,5 @@
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
+import { chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -38,8 +39,9 @@ export class QwenProvider implements ProviderAdapter {
       this.guard = getGenerationGuard();
       const worker = process.env.APP_MODE === 'worker';
       await pauseBeforeProviderAction('open-browser');
+      configureBrowserUserAgent();
       this.context = await chromium.launchPersistentContext(this.directory, {
-        channel: 'chromium', headless,
+        channel: getBrowserChannel(), headless,
         args: ['--disable-dev-shm-usage', ...(worker ? ['--disable-quic', '--proxy-bypass-list=<-loopback>'] : [])],
         ...(worker ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
       });
@@ -63,7 +65,7 @@ export class QwenProvider implements ProviderAdapter {
         const unlock = this.unlock; this.unlock = undefined; void unlock?.();
         for (const controller of this.active) controller.abort();
       });
-      this.page = this.context.pages()[0] || await this.context.newPage();
+      this.page = await createBrowserPage(this.context);
       await this.connect();
     } catch (error) { await this.close(); throw error; }
   }

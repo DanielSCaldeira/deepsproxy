@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { chromium as providerChromium } from './services/browser.ts';
 import { parseQwenStream, qwenModels, qwenPayload } from './providers/qwen-protocol.ts';
 import { parseProviderStreamToOpenAI } from './routes/stream.ts';
 import { createSessionStore } from './services/session-store.ts';
@@ -41,7 +42,7 @@ test('Qwen browser adapter persists manual login and exposes models and cancella
   Object.assign(process.env,env);
   t.after(()=>{for(const [key,value] of Object.entries(previous)) { if(value===undefined) delete process.env[key]; else process.env[key]=value; }});
   const browser=await chromium.launch(); const context=await browser.newContext();
-  t.mock.method(chromium,'launchPersistentContext',async()=>context);
+  t.mock.method(providerChromium,'launchPersistentContext',async()=>context);
   const payloads: any[]=[];
   await context.route('https://chat.qwen.ai/**',async route=>{
     const url=new URL(route.request().url());

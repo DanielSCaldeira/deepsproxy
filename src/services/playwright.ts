@@ -1,4 +1,5 @@
-import { chromium, BrowserContext, Page, Request } from 'playwright';
+import type { BrowserContext, Page, Request } from 'playwright';
+import { chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from './browser.ts';
 import { randomUUID } from 'node:crypto';
 import { diagnostic, diagnosticContext, diagnosticError, diagnosticRoute, type DiagnosticContext } from '../utils/diagnostics.ts';
 import { getProfileDirectory, hasSavedSession, restoreSession, saveSession, lockProfile, isProfileInUse } from './session-store.ts';
@@ -74,9 +75,6 @@ export interface HeaderCaptureResult {
   parentMessageId: number | null;
 }
 
-const DEFAULT_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
-
 const DEFAULT_LAUNCH_ARGS = [
   '--disable-blink-features=AutomationControlled',
   '--exclude-switches=enable-automation',
@@ -119,7 +117,7 @@ async function initializeBrowser(headless: boolean): Promise<void> {
   if (context) return;
 
   const profilePath = getProfileDirectory();
-  const userAgent = process.env.DEEPSEEK_USER_AGENT || DEFAULT_USER_AGENT;
+  const userAgent = process.env.DEEPSEEK_USER_AGENT || undefined;
 
   log.info('Launching persistent context', { profilePath, headless });
   diagnostic('browser.launch', { headless });
@@ -127,8 +125,9 @@ async function initializeBrowser(headless: boolean): Promise<void> {
   const unlock = await lockProfile();
   try {
     await pauseBeforeDeepSeekAction('open-browser');
+    configureBrowserUserAgent(userAgent);
     context = await chromium.launchPersistentContext(profilePath, {
-      channel: 'chromium',
+      channel: getBrowserChannel(),
       headless,
       userAgent,
       args: process.env.APP_MODE === 'worker' ? DEFAULT_LAUNCH_ARGS.filter(arg => arg !== '--no-sandbox').concat(['--disable-quic', '--proxy-bypass-list=<-loopback>']) : DEFAULT_LAUNCH_ARGS,
@@ -148,8 +147,6 @@ async function initializeBrowser(headless: boolean): Promise<void> {
     diagnostic('session.restore', { outcome: 'failed', category: diagnosticError(error) });
     log.warn('Could not restore session snapshot; using the persistent browser profile');
   }
-  // Chromium already opens a blank tab; reuse it instead of opening another.
-  activePage = context.pages().find(page => page.url() === 'about:blank') || await context.newPage();
   closeRequested = false;
   const browserId = randomUUID();
   diagnostic('browser.opened', { browserId, headless });
@@ -162,6 +159,13 @@ async function initializeBrowser(headless: boolean): Promise<void> {
     activePage = null;
     updateSession({ state: 'not_initialized', checkedAt: null }, 'browser_closed');
   });
+  try {
+    activePage = await createBrowserPage(context);
+  } catch (error) {
+    await context?.close();
+    await unlock();
+    throw error;
+  }
 }
 
 export async function saveAuthenticatedSession(interactive = false): Promise<void> {

@@ -132,6 +132,8 @@ Abra `http://127.0.0.1:3000/` para consultar o status do servidor, a autenticaç
 
 O login é feito pelo painel (`make live`), na tela remota dentro do site. A sessão é salva no perfil local (incluindo cookies, armazenamento local e IndexedDB) e restaurada ao reiniciar. O perfil padrão fica em `deepseek_profile` dentro do projeto, independentemente da pasta de onde o comando é executado. Não apague essa pasta se quiser preservar o login. O DeepSeek ainda pode expirar ou revogar uma sessão; nesse caso, a tela indicará a necessidade de entrar novamente. A API reserva o perfil para evitar uso simultâneo. Para manter o navegador visível também com `npm start`, configure `PLAYWRIGHT_HEADLESS=false`.
 
+DeepSeek e Qwen usam `playwright-extra` com `puppeteer-extra-plugin-stealth` para reduzir sinais de automação expostos ao site. Isso não garante que a automação fique indetectável. O padrão continua sendo Chromium; para usar o Google Chrome instalado no ambiente, configure `PLAYWRIGHT_CHANNEL=chrome`. Os workers Docker incluem Chromium e mantêm esse padrão.
+
 O proxy fica em `http://127.0.0.1:3000/v1/chat/completions`. Teste com qualquer SDK OpenAI:
 
 ```bash
@@ -256,6 +258,7 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `API_KEY` | — | Chave obrigatória se `BIND_HOST` for público |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `PLAYWRIGHT_HEADLESS` | `true` | `false` apenas para debugging |
+| `PLAYWRIGHT_CHANNEL` | `chromium` | `chrome` para usar Google Chrome instalado; vale para DeepSeek e Qwen |
 | `DEEPSEEK_PROFILE_DIR` | `deepseek_profile` | Pasta do perfil persistente do Chromium |
 | `DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS` | `8000` | Tempo limite p/ aparecer o input do chat |
 | `DEEPSPROXY_POW_TIMEOUT_MS` | `30000` | Tempo limite p/ capturar PoW |
@@ -272,7 +275,7 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `DEEPSEEK_CLIENT_VERSION` | igual a `APP_VERSION` | Header `x-client-version` |
 | `DEEPSEEK_CLIENT_LOCALE` | `pt_BR` | Header `x-client-locale` |
 | `DEEPSEEK_ACCEPT_LANGUAGE` | `pt-BR,...` | Header `accept-language` |
-| `DEEPSEEK_USER_AGENT` | Chrome 130 desktop | UA do Chromium embarcado |
+| `DEEPSEEK_USER_AGENT` | Versão do navegador, via stealth | Sobrescrita opcional do user agent do DeepSeek |
 
 O limite de contexto divulgado por `/v1/models` é configurado ou estimado (`context_limit_source: configured_or_estimated`). O piso de 512 mil tokens do Flash não é uma capacidade comprovada a cada envio. Falhas de rede, autenticação e suspensão não reduzem a estimativa. Em streaming, a telemetria só registra sucesso após concluir o processamento da resposta.
 

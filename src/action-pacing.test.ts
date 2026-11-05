@@ -64,7 +64,7 @@ test('browser flow paces new chats and sends, reuses a tab and serializes concur
   try {
     await initPlaywright(true);
     const page = getActivePage()!;
-    assert.equal(page.context().pages().length, 1, 'must reuse the initial blank tab');
+    assert.equal(page.context().pages().length, 1, 'must keep only the page initialized with stealth');
     await page.route('https://chat.deepseek.com/**', async route => {
       assert.equal(route.request().resourceType(), 'document', 'no upstream requests should escape interception');
       events.push({ action: 'navigate', at: performance.now() });
