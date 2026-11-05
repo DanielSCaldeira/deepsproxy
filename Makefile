@@ -1,4 +1,4 @@
-.PHONY: help setup install playwright build test run start continue-config docker-up docker-down docker-logs preview test-live-context live live-stop live-status live-logs live-workers live-worker-logs clean
+.PHONY: help setup install playwright build test run start continue-config docker-up docker-down docker-logs preview test-live-context live live-stop live-status live-ports live-logs live-workers live-worker-logs clean
 
 help:
 	@echo "Comandos disponíveis:"
@@ -18,6 +18,7 @@ help:
 	@echo "  make live         - Build + sobe ambiente de teste real (painel: http://localhost:3440)"
 	@echo "  make live-stop    - Para o ambiente real local e os navegadores (workers)"
 	@echo "  make live-status  - Mostra os containers do ambiente real local"
+	@echo "  make live-ports   - Mostra todas as portas do ambiente live e o que abre em cada uma"
 	@echo "  make live-logs    - Acompanha logs do gateway e do provisioner"
 	@echo "  make live-workers - Lista os navegadores (workers) ativos"
 	@echo "  make live-worker-logs - Acompanha logs dos navegadores (workers)"
@@ -69,6 +70,9 @@ live-stop:
 live-status:
 	npm run live:status
 
+live-ports:
+	npm run live:ports
+
 live-logs:
 	docker compose --env-file .cache/proxy-ia-live.env -f compose.live.yml logs -f --tail 100 gateway provisioner
 
@@ -76,7 +80,7 @@ live-workers:
 	docker ps -a --filter label=dsp_live.managed=worker --format "table {{.Names}}	{{.Status}}	{{.Label \"dsp_live.provider\"}}"
 
 live-worker-logs:
-	node -e "const cp=require('node:child_process'); const ids=cp.execSync('docker ps -q --filter label=dsp_live.managed=worker',{encoding:'utf8'}).trim().split(/\s+/).filter(Boolean); if(!ids.length){console.log('Nenhum navegador (worker) ativo.'); process.exit(0);} for(const id of ids) cp.spawn('docker',['logs','-f','--tail','50',id],{stdio:'inherit'});"
+	npm run live:worker-logs
 
 clean:
 	node -e "const fs=require('node:fs'); ['dist','.turbo','.cache'].forEach((d)=>{if(fs.existsSync(d)){fs.rmSync(d,{recursive:true,force:true}); console.log('Removido:', d);}});"

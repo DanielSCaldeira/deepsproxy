@@ -13,7 +13,9 @@
     "preview": "tsx scripts/preview-panel.ts",
     "live": "node scripts/live-test.js",
     "live:stop": "node scripts/live-test.js stop",
-    "live:status": "node scripts/live-test.js status"
+    "live:status": "node scripts/live-test.js status",
+    "live:ports": "node scripts/live-test.js ports",
+    "live:worker-logs": "node scripts/live-test.js worker-logs"
   },
   "keywords": [],
   "author": "Pedro Farias",
