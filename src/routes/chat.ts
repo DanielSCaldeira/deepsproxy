@@ -1,7 +1,8 @@
 import { Context } from 'hono';
 import { stream as honoStream } from 'hono/streaming';
 import { v4 as uuidv4 } from 'uuid';
-import { createDeepSeekStream } from '../services/deepseek.ts';
+import { getProvider } from '../providers/registry.ts';
+import type { ProviderEvent } from '../providers/types.ts';
 import { OpenAIRequest } from '../utils/types.ts';
 import { getModelTelemetry, recordSuccess, recordFailure } from '../services/telemetry.ts';
 import { compressMessages } from '../utils/compression.ts';
@@ -16,8 +17,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { apiError } from '../utils/api-error.ts';
 import { diagnostic, diagnosticContext, diagnosticError, setDiagnosticAttempt, withDiagnostics } from '../utils/diagnostics.ts';
 import {
-  parseDeepSeekStreamToOpenAI,
-  peekStream,
+  parseProviderStreamToOpenAI,
   makeChunk,
   ParsedCompletion,
 } from './stream.ts';
@@ -72,17 +72,16 @@ async function prepareContextMessages(
           previousSummary ? `Existing memory summary:\n${previousSummary}` : '',
           `New earlier conversation messages to incorporate:\n${sourceText}`,
         ].filter(Boolean).join('\n\n');
-        const result = await createDeepSeekStream(summaryPrompt, false, isProModel, null);
-        const parsed = await parseDeepSeekStreamToOpenAI(
-          result.stream,
+        const events = await getProvider().generate(summaryPrompt, body.model, false, generationSignal());
+        const parsed = await parseProviderStreamToOpenAI(
+          events,
           `summary-${uuidv4()}`,
           body.model,
           Math.ceil(summaryPrompt.length / 3.5),
-          result.uiSessionId,
           []
         );
         if (parsed.toolCalls.length > 0 || !parsed.content.trim()) {
-          throw new Error('DeepSeek did not return a usable context summary');
+          throw new Error('Provider did not return a usable context summary');
         }
 
         const summary = parsed.content.trim();
@@ -117,12 +116,13 @@ function buildPrompt(body: OpenAIRequest, messages: Message[]): PreparedPrompt {
 }
 
 function mapErrorToStatus(errMessage: string, error?: unknown): { status: number; code: string } {
-  if (/account is suspended/i.test(errMessage)) return { status: 403, code: 'deepseek_account_suspended' };
-  if (/login is required/i.test(errMessage)) return { status: 401, code: 'deepseek_login_required' };
-  if (error instanceof UpstreamError) return { status: error.status, code: error.status === 429 ? 'deepseek_rate_limited' : 'upstream_error' };
+  const provider = getProvider().id;
+  if (/account is suspended/i.test(errMessage)) return { status: 403, code: `${provider}_account_suspended` };
+  if (/login is required/i.test(errMessage)) return { status: 401, code: `${provider}_login_required` };
+  if (error instanceof UpstreamError) return { status: error.status, code: error.status === 429 ? `${provider}_rate_limited` : 'upstream_error' };
   if (generationSignal()?.aborted) return { status: 499, code: 'request_cancelled' };
   if (/chat input unavailable|Timeout waiting for chat input/i.test(errMessage)) {
-    return { status: 409, code: 'deepseek_chat_unavailable' };
+    return { status: 409, code: `${provider}_chat_unavailable` };
   }
   return { status: 500, code: 'upstream_error' };
 }
@@ -132,7 +132,7 @@ async function tryNonStream(
   completionId: string,
   isThinkingModel: boolean,
   isProModel: boolean
-): Promise<{ parsed: ParsedCompletion; uiSessionId: string }> {
+): Promise<{ parsed: ParsedCompletion }> {
   let lastError: any = null;
   const MAX_ATTEMPTS = maxAttempts();
   const contextMessages = await prepareContextMessages(body, isProModel);
@@ -144,27 +144,26 @@ async function tryNonStream(
     try {
       log.info('Chat attempt (non-stream)', { attempt, maxAttempts: MAX_ATTEMPTS, promptChars: promptSize });
       diagnostic('attempt.started', { attempt, maxAttempts: MAX_ATTEMPTS, promptChars: promptSize });
-      const result = await createDeepSeekStream(finalPrompt, isThinkingModel, isProModel, null);
-      const parsed = await parseDeepSeekStreamToOpenAI(
-        result.stream,
+      const events = await getProvider().generate(finalPrompt, body.model, isThinkingModel, generationSignal());
+      const parsed = await parseProviderStreamToOpenAI(
+        events,
         completionId,
         body.model,
         promptTokens,
-        result.uiSessionId,
         (body as any).tools || [],
         undefined,
         body.tool_choice
       );
 
       if (parsed.content === '' && parsed.toolCalls.length === 0) {
-        log.warn('Empty response from DeepSeek', { attempt });
+        log.warn('Empty response from provider', { attempt });
         diagnostic('attempt.empty', { durationMs: Date.now() - started });
         recordFailure(body.model, promptSize);
         continue;
       }
 
       recordSuccess(body.model, promptSize);
-      return { parsed, uiSessionId: result.uiSessionId };
+      return { parsed };
     } catch (err: any) {
       diagnostic('attempt.failed', { category: diagnosticError(err), durationMs: Date.now() - started });
       if (err instanceof ToolCallError) throw err;
@@ -176,14 +175,14 @@ async function tryNonStream(
     }
   }
 
-  throw lastError || new Error('Failed to get a non-empty response from DeepSeek after multiple attempts.');
+  throw lastError || new Error('Failed to get a non-empty response from provider after multiple attempts.');
 }
 
 async function tryStream(
   body: OpenAIRequest,
   isThinkingModel: boolean,
   isProModel: boolean
-): Promise<{ stream: ReadableStream; uiSessionId: string; promptTokens: number; promptSize: number }> {
+): Promise<{ stream: AsyncIterable<ProviderEvent>; promptTokens: number; promptSize: number }> {
   let lastError: any = null;
   const MAX_ATTEMPTS = maxAttempts();
   const contextMessages = await prepareContextMessages(body, isProModel);
@@ -195,17 +194,17 @@ async function tryStream(
     try {
       log.info('Chat attempt (stream)', { attempt, maxAttempts: MAX_ATTEMPTS, promptChars: promptSize });
       diagnostic('attempt.started', { attempt, maxAttempts: MAX_ATTEMPTS, promptChars: promptSize });
-      const result = await createDeepSeekStream(finalPrompt, isThinkingModel, isProModel, null);
-      const { isEmpty, peekedStream } = await peekStream(result.stream);
+      const events = await getProvider().generate(finalPrompt, body.model, isThinkingModel, generationSignal());
+      const { isEmpty, peekedStream } = await peekProviderEvents(events);
       if (isEmpty) {
-        log.warn('Empty stream from DeepSeek', { attempt });
+        log.warn('Empty stream from provider', { attempt });
         diagnostic('attempt.empty', { durationMs: Date.now() - started });
         recordFailure(body.model, promptSize);
         continue;
       }
 
       log.info('Response stream opened', { model: body.model, promptChars: promptSize });
-      return { stream: peekedStream, uiSessionId: result.uiSessionId, promptTokens, promptSize };
+      return { stream: peekedStream, promptTokens, promptSize };
     } catch (err: any) {
       diagnostic('attempt.failed', { category: diagnosticError(err), durationMs: Date.now() - started });
       log.error('Chat attempt failed (stream)', { attempt, error: err?.message || String(err) });
@@ -216,7 +215,7 @@ async function tryStream(
     }
   }
 
-  throw lastError || new Error('Failed to get a valid stream from DeepSeek after multiple attempts.');
+  throw lastError || new Error('Failed to get a valid stream from provider after multiple attempts.');
 }
 
 export async function chatCompletions(c: Context) {
@@ -248,11 +247,21 @@ export async function chatCompletions(c: Context) {
 async function handleChatCompletions(c: Context, finish: (outcome: string, status?: number) => void, abortController: AbortController) {
   try {
     generationSignal()?.throwIfAborted();
-    getGenerationGuard().assertAllowed();
     const body: OpenAIRequest = await c.req.json();
-    diagnostic('request.started', { messageCount: body.messages?.length ?? 0, stream: body.stream ?? false, model: ['deepseek-v4-flash', 'deepseek-v4-flash-thinking', 'deepseek-v4-pro', 'deepseek-v4-pro-thinking'].includes(body.model) ? body.model : 'other' });
+    const provider = getProvider();
+    if (!body || typeof body.model !== 'string' || !Array.isArray(body.messages)) return c.json({ error: { message: 'Informe model e messages.', code: 'invalid_request_error' } }, 400);
+    if (provider.id === 'qwen' && !body.model.startsWith('qwen/')) return c.json({ error: { message: 'Modelo inválido para Qwen.', code: 'model_not_found' } }, 400);
+    const models = await provider.models();
+    if (!models.some(model => model.id === body.model)) {
+      return c.json({ error: { message: `Unknown model: ${body.model}`, type: 'invalid_request_error', code: 'model_not_found' } }, 400);
+    }
+    if (provider.id === 'qwen' && body.reasoning_effort !== undefined && !['none','low','medium','high','xhigh','max'].includes(body.reasoning_effort)) return c.json({error:{message:'reasoning_effort inválido.',code:'invalid_request_error'}},400);
+    const spec = models.find(model => model.id === body.model)!;
+    if (provider.id === 'qwen' && spec.contextLength > 0) getModelTelemetry(body.model).detectedLimit = Math.min(getModelTelemetry(body.model).detectedLimit, spec.contextLength * 3.5);
+    getGenerationGuard().assertAllowed();
+    diagnostic('request.started', { messageCount: body.messages?.length ?? 0, stream: body.stream ?? false, model: body.model });
     const isStream = body.stream ?? false;
-    const isThinkingModel = body.model.includes('thinking');
+    const isThinkingModel = provider.id === 'qwen' ? (body.reasoning_effort !== undefined && body.reasoning_effort !== 'none') : body.model.includes('thinking');
     const isProModel = body.model.includes('pro');
     const completionId = 'chatcmpl-' + uuidv4();
 
@@ -276,7 +285,7 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
       });
     }
 
-    const { stream: deepSeekStream, uiSessionId, promptTokens, promptSize } = await tryStream(body, isThinkingModel, isProModel);
+    const { stream: providerEvents, promptTokens, promptSize } = await tryStream(body, isThinkingModel, isProModel);
 
     c.header('Content-Type', 'text/event-stream');
     c.header('Cache-Control', 'no-cache');
@@ -297,12 +306,11 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
         await writeEvent(makeChunk(completionId, body.model, { role: 'assistant', content: '' }));
 
         try {
-          const parsed = await parseDeepSeekStreamToOpenAI(
-            deepSeekStream,
+          const parsed = await parseProviderStreamToOpenAI(
+            providerEvents,
             completionId,
             body.model,
             promptTokens,
-            uiSessionId,
             (body as any).tools || [],
             writeEvent,
             body.tool_choice
@@ -319,6 +327,7 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
         await streamWriter.write('data: [DONE]\n\n');
         finish('ok', 200);
       } catch (error) { finish('failed', 200); throw error; }
+      finally { abortController.abort(); }
     }));
   } catch (err: any) {
     if (err instanceof ToolCallError) {
@@ -329,4 +338,28 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
     const { status, code } = mapErrorToStatus(errMessage, err);
     return c.json(apiError(err, code), status as any);
   }
+}
+
+/** Peek without losing cancellation or swallowing provider errors. */
+async function peekProviderEvents(events: AsyncIterable<ProviderEvent>) {
+  const iterator = events[Symbol.asyncIterator]();
+  let first: IteratorResult<ProviderEvent>;
+  try {
+    do { first = await iterator.next(); } while (!first.done && first.value.type === 'finish');
+  }
+  catch (error) { await iterator.return?.(); throw error; }
+  return {
+    isEmpty: !!first.done,
+    peekedStream: {
+      async *[Symbol.asyncIterator]() {
+        try {
+          if (!first.done) yield first.value;
+          while (!first.done) {
+            first = await iterator.next();
+            if (!first.done) yield first.value;
+          }
+        } finally { await iterator.return?.(); }
+      },
+    } as AsyncIterable<ProviderEvent>,
+  };
 }

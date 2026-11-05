@@ -2,12 +2,28 @@ import { Mutex } from '../utils/mutex.ts';
 import { UserQueue } from './queue.ts';
 import { HttpError, workerToken } from './security.ts';
 import type { ProductionConfig } from './config.ts';
-import type { Database } from './database.ts';
+import type { Database, ProviderAccount } from './database.ts';
+import { DEEPSEEK_MODEL_IDS } from '../providers/catalog.ts';
 
+const PROVISION_HINTS: Record<string, string> = {
+  capacity_full: 'Todos os navegadores estão ocupados. Aguarde alguns minutos ou desconecte outra conta.',
+  exited: 'O navegador encerrou ao iniciar. Clique em "Recuperar navegador"; se persistir, verifique os logs do provisioner (docker logs do serviço provisioner).',
+  health_timeout: 'O navegador demorou demais para iniciar. Clique em "Recuperar navegador" em instantes.',
+  create: 'O Docker recusou criar o navegador. Verifique se a imagem do worker foi construída (docker compose build worker-image).',
+  start: 'O Docker não conseguiu iniciar o navegador. Verifique os logs do provisioner.',
+};
+/** Real cause from the provisioner plus what the user should do next. */
+export function provisionMessage(status: number, body: any): string {
+  const code = typeof body?.code === 'string' ? body.code : status === 429 ? 'capacity_full' : '';
+  const detail = typeof body?.detail === 'string' ? body.detail : typeof body?.error === 'string' ? body.error : `HTTP ${status}`;
+  const hint = PROVISION_HINTS[code] || 'Clique em "Recuperar navegador" e tente novamente; se persistir, verifique os logs do provisioner.';
+  return `Não foi possível preparar o navegador${code ? ` (etapa: ${code})` : ''}: ${detail}. ${hint}`;
+}
 type Worker = { id: string; host: string; lastUsed: number; failures: number };
 type Login = { session: string; until: number; release: () => void; close: () => void };
 export class Workers {
   readonly queues = new Map<string, UserQueue>();
+  private accountRefs = new Map<string, ProviderAccount>();
   private workers = new Map<string, Worker>();
   private logins = new Map<string, Login>();
   private mutex = new Mutex();
@@ -22,18 +38,48 @@ export class Workers {
     return queue;
   }
   async provision(action: string, id?: string): Promise<any> {
-    const response = await fetch(`${this.config.provisioner}/${action}${id ? '/' + id : ''}`, {
-      method: 'POST', headers: { Authorization: `Bearer ${this.config.provisionerToken}` }, signal: AbortSignal.timeout(90_000),
-    });
-    if (!response.ok) throw new HttpError(response.status === 429 ? 503 : 502, 'Não foi possível preparar o navegador.', 'browser_unavailable');
+    const body = id ? JSON.stringify(await this.account(id)) : undefined;
+    let response: Response;
+    try {
+      response = await fetch(`${this.config.provisioner}/${action}${id ? '/' + id : ''}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${this.config.provisionerToken}`, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(180_000),
+      });
+    } catch (error) {
+      const reason = error instanceof Error && error.name === 'TimeoutError' ? 'o provisioner não respondeu em 180s' : `o provisioner está inacessível (${error instanceof Error ? error.message : 'erro de rede'})`;
+      console.error('[workers] provisioner unreachable', { action, reason });
+      throw new HttpError(502, `Não foi possível preparar o navegador: ${reason}. Verifique se o serviço provisioner está em execução e tente novamente.`, 'browser_unavailable');
+    }
+    if (!response.ok) {
+      const body: any = await response.json().catch(() => ({}));
+      console.error('[workers] provisioner failed', { action, status: response.status, code: body?.code, detail: body?.detail || body?.error });
+      throw new HttpError(response.status === 429 ? 503 : 502, provisionMessage(response.status, body), 'browser_unavailable');
+    }
     return response.json();
   }
+  private async account(id: string): Promise<ProviderAccount> {
+    if (this.db) {
+      const row = (await this.db.query('SELECT id,user_id,provider FROM provider_accounts WHERE id=$1',[id])).rows[0];
+      if (!row) throw new HttpError(404,'Conta não encontrada.');
+      this.accountRefs.set(id,row as ProviderAccount); return row as ProviderAccount;
+    }
+    return {id,user_id:id,provider:'deepseek'};
+  }
+  async models(id: string): Promise<string[]> {
+    const account = await this.account(id);
+    return this.snapshots.get(id)?.models || (account.provider === 'deepseek' ? [...DEEPSEEK_MODEL_IDS] : []);
+  }
   async initialize() {
-    if (this.db) for (const row of (await this.db.query('SELECT * FROM account_status')).rows) this.snapshots.set(row.user_id, {
-      state: row.state, sessionSaved: row.session_saved, checkedAt: row.checked_at, suspendedUntil: row.suspended_until,
+    if (this.db) for (const row of (await this.db.query('SELECT * FROM account_status')).rows) this.snapshots.set(row.account_id, {
+      models: row.models, state: row.state, sessionSaved: row.session_saved, checkedAt: row.checked_at, suspendedUntil: row.suspended_until,
     });
     const { workers } = await this.provision('list');
-    for (const w of workers) this.workers.set(w.id, { ...w, lastUsed: Date.now(), failures: 0 });
+    for (const w of workers) {
+      try {
+        const account = await this.account(w.id);
+        if (w.provider !== account.provider || w.owner !== account.user_id || w.contract !== '2' || !w.compatible) { await this.provision('stop',w.id); continue; }
+        this.workers.set(w.id, { ...w, lastUsed: Date.now(), failures: 0 });
+      } catch { /* Unknown resources are rejected; the provisioner validates ownership before removal. */ }
+    }
   }
   async ensure(id: string): Promise<Worker> {
     return this.mutex.withLock(async () => {
@@ -66,8 +112,19 @@ export class Workers {
       try {
         const response = await this.request(id, '/api/status', {}, false);
         if (!response?.ok) throw new Error('status');
-        const raw = (await response.json()).deepseek;
+        const status = await response.json();
+        const raw = status.account || status.deepseek;
+        if (!raw) throw new Error('Invalid account status');
         snapshot = { state: raw.state, sessionSaved: !!raw.sessionSaved, checkedAt: raw.checkedAt, suspendedUntil: raw.suspendedUntil || null };
+        snapshot.models = this.snapshots.get(id)?.models;
+        if (raw.state === 'authenticated') {
+          const catalog = await this.request(id,'/v1/models',{},false);
+          if (catalog?.ok) {
+            const data = (await catalog.json()).data;
+            const account = await this.account(id);
+            if (Array.isArray(data)) snapshot.models = data.map((m: any) => m.id).filter((m: unknown) => typeof m === 'string' && (account.provider === 'qwen' ? m.startsWith('qwen/') : m.startsWith('deepseek-')));
+          }
+        }
         await this.remember(id, snapshot);
       } catch { runtimeState = 'unavailable'; }
     }
@@ -76,9 +133,12 @@ export class Workers {
   }
   private async remember(id: string, snapshot: any) {
     this.snapshots.set(id, snapshot);
-    if (this.db) await this.db.query(`INSERT INTO account_status(user_id,state,session_saved,checked_at,suspended_until) VALUES($1,$2,$3,$4,$5)
-      ON CONFLICT(user_id) DO UPDATE SET state=$2,session_saved=$3,checked_at=$4,suspended_until=$5`,
-      [id,snapshot.state,snapshot.sessionSaved,snapshot.checkedAt,snapshot.suspendedUntil || null]);
+    if (this.db) {
+      const account = await this.account(id);
+      await this.db.query(`INSERT INTO account_status(user_id,account_id,state,session_saved,checked_at,suspended_until,models) VALUES($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT(account_id) DO UPDATE SET state=$3,session_saved=$4,checked_at=$5,suspended_until=$6,models=COALESCE($7,account_status.models)`,
+      [account.user_id,id,snapshot.state,snapshot.sessionSaved,snapshot.checkedAt,snapshot.suspendedUntil || null,snapshot.models ? JSON.stringify(snapshot.models) : null]);
+    }
   }
   async connect(id: string, session: string) {
     const existing=this.logins.get(id);
@@ -88,7 +148,11 @@ export class Workers {
     const release = await this.queue(id).acquire(undefined, 120_000);
     try {
       const response = await this.request(id, '/internal/connect', { method: 'POST' });
-      if (!response?.ok) throw new Error('connect');
+      if (!response?.ok) {
+        const detail = response ? ((await response.text().catch(() => '')).slice(0, 300) || `HTTP ${response.status}`) : 'navegador não iniciado';
+        console.error('[workers] remote login failed', { id, status: response?.status, detail });
+        throw new HttpError(502, `O navegador iniciou, mas não abriu a tela de login: ${detail}. Clique em "Recuperar navegador" e conecte novamente.`, 'browser_unavailable');
+      }
       this.logins.set(id, { session, until: Date.now() + 30 * 60_000, release, close: () => {} });
     } catch (error) { release(); throw error; }
   }
@@ -103,6 +167,7 @@ export class Workers {
       this.logins.delete(id); login.close(); login.release();
     }
   }
+  cancelAllLogins() { for (const id of this.logins.keys()) this.cancel(id); }
   cancelSession(session: string) { for (const [id, login] of this.logins) if (login.session === session) this.cancel(id); }
   isLoggingIn(id: string) { return this.logins.has(id); }
   async action(id: string, action: 'recover' | 'disconnect') {
@@ -114,11 +179,15 @@ export class Workers {
         this.workers.delete(id);
       });
       if (action === 'recover') await this.ensure(id);
-      else await this.remember(id, { state: 'login_required', sessionSaved: false, checkedAt: new Date().toISOString(), suspendedUntil: null });
+      else await this.remember(id, { state: 'login_required', sessionSaved: false, checkedAt: new Date().toISOString(), suspendedUntil: null, models: [] });
       this.recoveryFailures.delete(id);
     } finally { release(); }
   }
-  async stopUser(id: string) { this.cancel(id); await this.mutex.withLock(async () => { await this.provision('stop', id); this.workers.delete(id); }); }
+  async stopAccount(id: string) { this.cancel(id); await this.mutex.withLock(async () => { await this.provision('stop', id); this.workers.delete(id); }); }
+  async stopUser(id: string) {
+    const ids = this.db ? (await this.db.query('SELECT id FROM provider_accounts WHERE user_id=$1',[id])).rows.map(r => r.id) : [id];
+    await Promise.all(ids.map(account => this.stopAccount(account)));
+  }
   async tick(validSession: (hash: string) => Promise<boolean>) {
     for (const [id, login] of this.logins) {
       try {

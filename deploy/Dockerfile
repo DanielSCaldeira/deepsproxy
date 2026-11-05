@@ -13,6 +13,7 @@ COPY --from=build /app/dist ./dist
 COPY package*.json ./
 COPY public ./public
 COPY deploy ./deploy
+COPY src/providers/QWEN-NOTICE ./notices/QWEN-NOTICE
 USER node
 CMD ["node","dist/production/server.js"]
 

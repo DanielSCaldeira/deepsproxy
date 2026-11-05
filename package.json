@@ -1,17 +1,19 @@
 {
-  "name": "deepsproxy",
+  "name": "proxy-ia",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "start": "npx tsx src/index.ts",
-    "login": "npx tsx src/login.ts",
-    "test": "tsx --test --test-force-exit src/**/*.test.ts",
+    "test": "node scripts/test.js",
     "test:live-context": "tsx scripts/smoke-context-summary.ts",
     "build": "tsc",
     "start:production": "node dist/production/server.js",
     "start:provisioner": "node dist/production/provisioner.js",
-    "preview": "tsx scripts/preview-panel.ts"
+    "preview": "tsx scripts/preview-panel.ts",
+    "live": "node scripts/live-test.js",
+    "live:stop": "node scripts/live-test.js stop",
+    "live:status": "node scripts/live-test.js status"
   },
   "keywords": [],
   "author": "Pedro Farias",

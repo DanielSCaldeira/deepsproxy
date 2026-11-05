@@ -1,9 +1,9 @@
-name: DeepsProxy
+name: Proxy IA
 version: 1.0.0
 schema: v1
 
 models:
-  - name: LOCALHOST:3000 - DeepsProxy Flash
+  - name: LOCALHOST:3000 - Proxy IA Flash
     provider: openai
     model: deepseek-v4-flash
     apiBase: http://127.0.0.1:3000/v1
@@ -18,7 +18,7 @@ models:
       - edit
       - apply
 
-  - name: LOCALHOST:3000 - DeepsProxy Thinking
+  - name: LOCALHOST:3000 - Proxy IA Thinking
     provider: openai
     model: deepseek-v4-flash-thinking
     apiBase: http://127.0.0.1:3000/v1

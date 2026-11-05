@@ -19,12 +19,12 @@
         "available_models": [
           {
             "name": "deepseek-v4-flash",
-            "display_name": "DeepsProxy Flash",
+            "display_name": "Proxy IA Flash",
             "max_tokens": 512000
           },
           {
             "name": "deepseek-v4-flash-thinking",
-            "display_name": "DeepsProxy Thinking",
+            "display_name": "Proxy IA Thinking",
             "max_tokens": 512000,
             "capabilities": {
               "tools": true,

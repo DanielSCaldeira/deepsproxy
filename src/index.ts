@@ -5,8 +5,8 @@ import { swaggerUI } from '@hono/swagger-ui';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { chatCompletions } from './routes/chat.ts';
-import { initPlaywright, closePlaywright, saveAuthenticatedSession, getSessionStatus, getActivePage, openDeepSeekChat } from './services/playwright.ts';
-import { getContextLength } from './services/telemetry.ts';
+import { getProvider } from './providers/registry.ts';
+import type { ProviderModel } from './providers/types.ts';
 import { createLogger } from './utils/logger.ts';
 import { openApiSpec } from './openapi.ts';
 import { statusPage } from './routes/status.ts';
@@ -19,20 +19,21 @@ const log = createLogger('server');
 export const app = new Hono();
 let workerReady = false;
 
-function modelEntry(id: string) {
-  const dynamicLimit = getContextLength(id);
+function modelEntry(model: ProviderModel) {
+  const id = model.id;
+  const dynamicLimit = model.contextLength;
   return {
     id,
     object: 'model',
     created: Math.floor(Date.now() / 1000),
-    owned_by: 'deepseek',
+    owned_by: getProvider().id,
     permission: [],
     root: id,
     parent: null,
     context_length: dynamicLimit,
     max_context_tokens: dynamicLimit,
     max_input_tokens: dynamicLimit,
-    max_output_tokens: 8_000,
+    max_output_tokens: model.maxOutputTokens ?? 8_000,
     context_limit_source: 'configured_or_estimated',
   };
 }
@@ -57,48 +58,43 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-app.get('/health', (c) => process.env.APP_MODE === 'worker' && (!workerReady || !getActivePage())
+app.get('/health', (c) => process.env.APP_MODE === 'worker' && (!workerReady || !getProvider().getActivePage())
   ? c.json({ status: 'starting' }, 503) : c.json({ status: 'ok' }));
 
 if (process.env.APP_MODE === 'worker') {
   if (!process.env.API_KEY || process.env.API_KEY.length < 32) throw new Error('Worker requires an internal API_KEY');
   app.post('/internal/connect', async c => {
-    await initPlaywright(false);
-    const page = getActivePage();
+    await getProvider().initialize(false);
+    const page = getProvider().getActivePage();
     if (!page) return c.json({ error: 'browser_unavailable' }, 503);
-    await openDeepSeekChat(page, 20_000);
+    await getProvider().connect();
     return c.json({ ok: true });
   });
   app.post('/internal/confirm', async c => {
-    try { await saveAuthenticatedSession(true); }
-    catch { return c.json({ state: (await getSessionStatus()).state }, 409); }
+    try { await getProvider().confirmLogin(true); }
+    catch { return c.json({ state: (await getProvider().status()).state }, 409); }
     return c.json({ ok: true });
   });
 }
 
 app.get('/api/status', async (c) => {
   c.header('Cache-Control', 'no-store');
+  const account = await getProvider().status();
   return c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    deepseek: await getSessionStatus(),
+    provider: getProvider().id,
+    account,
+    ...(getProvider().id === 'deepseek' ? { deepseek: account } : {}),
   });
 });
 
 app.post('/v1/chat/completions', chatCompletions);
 
-app.get('/v1/models', (c) => {
-  return c.json({
-    object: 'list',
-    data: [
-      modelEntry('deepseek-v4-flash'),
-      modelEntry('deepseek-v4-flash-thinking'),
-      modelEntry('deepseek-v4-pro'),
-      modelEntry('deepseek-v4-pro-thinking'),
-    ],
-  });
-});
+app.get('/v1/models', async (c) => c.json({
+  object: 'list', data: (await getProvider().models()).map(modelEntry),
+}));
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
@@ -152,15 +148,15 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
   let stopping = false;
   let failures = 0;
   const ensureBrowser = async () => {
-    if (initializing || stopping || getActivePage()) return;
+    if (initializing || stopping || getProvider().getActivePage()) return;
     if (process.env.APP_MODE === 'worker' && failures >= 3) return;
     initializing = true;
     diagnostic('browser.recovery', { attempt: failures + 1 });
     try {
-      await initPlaywright(headless);
+      await getProvider().initialize(headless);
       if (!headless) {
-        const page = getActivePage();
-        if (page) await openDeepSeekChat(page);
+        const page = getProvider().getActivePage();
+        if (page) await getProvider().connect();
       }
       log.info('Playwright initialized');
       workerReady = true;
@@ -172,7 +168,13 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
       initializing = false;
     }
   };
-  server.once('listening', () => { void ensureBrowser(); });
+  server.once('listening', () => {
+    if (process.env.APP_MODE !== 'worker') {
+      const host = ['0.0.0.0', '::'].includes(bind.host) ? 'localhost' : bind.host;
+      log.info(`Proxy pronto — painel: http://${host}:${bind.port}/ | API OpenAI: http://${host}:${bind.port}/v1`);
+    }
+    void ensureBrowser();
+  });
   const recovery = setInterval(() => void ensureBrowser(), 15_000);
   recovery.unref();
   const shutdown = async () => {
@@ -180,8 +182,8 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
     diagnostic('process.stopping');
     clearInterval(recovery);
     server.close();
-    await saveAuthenticatedSession().catch(() => undefined);
-    await closePlaywright();
+    await getProvider().confirmLogin().catch(() => undefined);
+    await getProvider().close();
     await flushDiagnostics();
     process.exit(0);
   };
@@ -194,7 +196,7 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
     process.removeListener('SIGTERM', shutdown);
     if (error.code === 'EADDRINUSE') log.error('Porta já ocupada. Encerre a outra instância do proxy ou configure PORT.', { host: bind.host, port: bind.port });
     else log.error('Não foi possível iniciar o servidor.', { code: error.code });
-    void closePlaywright().finally(() => { process.exitCode = 1; });
+    void getProvider().close().finally(() => { process.exitCode = 1; });
   });
   return server;
 }

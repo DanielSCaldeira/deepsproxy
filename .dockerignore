@@ -1,6 +1,10 @@
 node_modules
 dist
 deepseek_profile
+qwen_profile
+.cache
+*.pem
+*.key
 .env
 .env.*
 backups

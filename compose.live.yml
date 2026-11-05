@@ -1,0 +1,32 @@
+name: proxy-ia-live
+# Reuse the production services, with an isolated database and browser profiles.
+# Chromium considers localhost a trustworthy origin, including Secure cookies.
+services:
+  gateway:
+    extends: { file: compose.production.yml, service: gateway }
+    container_name: proxy_ia_live_gateway
+    ports: ["127.0.0.1:3440:3000"]
+    environment:
+      PUBLIC_ORIGIN: http://localhost:3440
+      LOCAL_LIVE_TEST: "1"
+  provisioner:
+    extends: { file: compose.production.yml, service: provisioner }
+    environment:
+      GATEWAY_CONTAINER: proxy_ia_live_gateway
+      EGRESS_CONTAINER: proxy_ia_live_egress
+      RESOURCE_PREFIX: dsp_live
+  egress:
+    extends: { file: compose.production.yml, service: egress }
+    container_name: proxy_ia_live_egress
+  postgres:
+    extends: { file: compose.production.yml, service: postgres }
+    image: postgres:17
+  worker-image:
+    extends: { file: compose.production.yml, service: worker-image }
+networks:
+  edge: {}
+  control: { internal: true }
+  database: { internal: true }
+  outbound: {}
+volumes:
+  postgres_data: {}

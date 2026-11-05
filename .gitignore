@@ -17,3 +17,6 @@ start-deepsproxy.sh
 /ampere-a1.pub
 /ssh-key-2026-11-04.key
 /ssh-key-2026-11-04.key.pub
+
+# Private Qwen browser profile
+qwen_profile/

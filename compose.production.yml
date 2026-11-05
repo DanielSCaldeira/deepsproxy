@@ -14,6 +14,7 @@ services:
       gateway: { condition: service_healthy }
     restart: unless-stopped
   gateway:
+    stop_grace_period: 180s
     container_name: dsp_gateway
     build: { context: ., dockerfile: deploy/Dockerfile, target: runtime }
     image: ${DEEPSPROXY_REGISTRY:-}deepsproxy-runtime:${DEEPSPROXY_IMAGE_TAG:-local}

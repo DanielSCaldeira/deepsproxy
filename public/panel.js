@@ -1,4 +1,5 @@
 const el = id => document.getElementById(id);
+let remoteProvider, accountList = [];
 let csrf = '', me, mode = 'login', busy = false, refreshing = false, rfb, RFB;
 const linkToken = new URLSearchParams(location.hash.slice(1)).get('token');
 if (linkToken) history.replaceState(null, '', '/');
@@ -13,7 +14,7 @@ function showAuth() {
   el('authentication').hidden = false; el('dashboard').hidden = true; el('logout').hidden = true; el('who').textContent = ''; csrf = '';
   for (const id of ['key-secret','link-value','audit']) el(id).textContent = '';
   for (const id of ['new-key','share-link']) el(id).hidden = true;
-  el('keys').replaceChildren(); el('users').replaceChildren();
+  el('keys').replaceChildren(); el('users').replaceChildren(); el('accounts').replaceChildren(); accountList = []; el('available-models').textContent = ''; remoteProvider = undefined;
 }
 function closeRemote() { if (rfb) { const connection = rfb; rfb = undefined; connection.disconnect(); } el('remote-panel').hidden = true; el('remote').replaceChildren(); }
 async function copy(value) { try { await navigator.clipboard.writeText(value); notice('Copiado.'); } catch { notice('Selecione o texto e copie.'); } }
@@ -27,27 +28,52 @@ async function signedIn() {
   el('api-base').textContent = location.origin + '/v1'; await refresh(); await keys(); if (me.role === 'admin') await users();
 }
 const states = {
-  authenticated: ['Conectada', 'good', 'Seu login foi reconhecido pelo DeepSeek.'],
-  login_required: ['Login necessário', 'warn', 'Entre novamente para retomar o uso da API.'],
-  suspended: ['Suspensa pelo DeepSeek', 'bad', 'O provedor informou uma suspensão. Recuperar o navegador não remove essa restrição.'],
-  not_initialized: ['Ainda não conectada', 'warn', 'Use Conectar para entrar na sua conta DeepSeek.'],
-  unavailable: ['Não foi possível verificar', 'bad', 'Tente atualizar o status ou recuperar o navegador.'],
+  authenticated: ['Conectada', 'good', 'Seu login foi reconhecido.'],
+  login_required: ['Login necessário', 'warn', 'Entre novamente para retomar o uso dos modelos.'],
+  suspended: ['Suspensa pelo provedor', 'bad', 'Consulte o aviso no serviço antes de tentar novamente.'],
+  not_initialized: ['Ainda não conectada', 'warn', 'Use Conectar para autenticar sua conta.'],
+  unavailable: ['Não foi possível verificar', 'bad', 'Atualize o status ou recupere o navegador.'],
 };
+function renderAccounts(accounts) {
+  const fragment = document.createDocumentFragment();
+  for (const account of accounts) {
+    const row = document.createElement('article'); row.className = 'account-row'; row.dataset.provider = account.provider;
+    const heading = document.createElement('div'); heading.className = 'row';
+    const title = document.createElement('h3'); title.textContent = account.name;
+    const [label, tone, detail] = states[account.accountState] || states.unavailable;
+    const status = document.createElement('strong'); status.className = tone; status.dataset.field = 'state'; status.textContent = label;
+    heading.append(title, status); row.append(heading);
+    const description = document.createElement('p'); description.className = 'muted'; description.textContent = account.loginActive ? 'Login em andamento. Conclua a autenticação na tela remota.' : detail + (account.suspendedUntil ? ' Até: ' + account.suspendedUntil : ''); row.append(description);
+    const meta = document.createElement('div'); meta.className = 'account-meta';
+    const runtime = account.loginActive ? 'Login em andamento' : account.runtimeState === 'sleeping' ? 'Navegador em espera' : account.runtimeState === 'unavailable' ? 'Navegador indisponível' : account.busy ? 'Processando' : 'Navegador disponível';
+    for (const text of [runtime, account.sessionSaved ? 'Sessão salva na VPS' : 'Sessão ainda não salva', account.checkedAt ? 'Verificação: ' + new Date(account.checkedAt).toLocaleString('pt-BR') : 'Aguardando primeira verificação', account.queueDepth ? account.queueDepth + ' chamada(s) na fila' : '']) {
+      if (text) { const item = document.createElement('span'); item.textContent = text; meta.append(item); }
+    }
+    row.append(meta);
+    const actions = document.createElement('div'); actions.className = 'actions'; actions.style.marginTop = '16px';
+    button(actions, account.loginActive ? 'Abrir login' : account.accountState === 'authenticated' ? 'Entrar novamente' : 'Conectar', () => account.loginActive ? remote(account.provider) : operation('connect', account.provider));
+    button(actions, 'Recuperar navegador', () => operation('recover', account.provider));
+    button(actions, 'Desconectar', () => operation('disconnect', account.provider), true);
+    row.append(actions); fragment.append(row);
+  }
+  el('accounts').replaceChildren(fragment);
+  // Polling may finish while another action is pending.
+  if (busy) for (const b of el('accounts').querySelectorAll('button')) b.disabled = true;
+  const models = accounts.flatMap(account => account.models || []).map(model => typeof model === 'string' ? model : model.id);
+  el('available-models').textContent = models.length ? models.join(', ') : 'Conecte um serviço para consultar os modelos.';
+}
 async function refresh() {
   if (!me || refreshing) return;
   refreshing = true;
   try {
-    const state = await api('/api/me/status');
-    const [label, tone, detail] = states[state.accountState] || states.unavailable;
-    el('account-state').textContent = label; el('account-state').className = 'value ' + tone;
-    el('account-detail').textContent = detail + (state.suspendedUntil ? ' Até: ' + state.suspendedUntil : '');
-    const runtime = state.loginActive ? 'Login em andamento' : state.runtimeState === 'sleeping' ? 'Em espera' : state.runtimeState === 'unavailable' ? 'Indisponível' : state.busy ? 'Processando' : 'Disponível';
-    el('runtime-state').textContent = runtime;
-    el('runtime-detail').textContent = state.runtimeState === 'sleeping' ? 'Será iniciado automaticamente no próximo uso. O status da conta é o da última verificação.' : state.runtimeState === 'unavailable' ? 'O status da conta é o da última verificação. A recuperação automática está em andamento.' : state.queueDepth ? state.queueDepth + ' chamada(s) na fila.' : 'Navegador exclusivo da sua conta.';
-    el('saved-state').textContent = state.sessionSaved ? 'Salva na VPS' : 'Ainda não salva';
-    el('checked-at').textContent = state.checkedAt ? 'Última verificação: ' + new Date(state.checkedAt).toLocaleString('pt-BR') : 'Aguardando a primeira verificação.';
-    el('connection-hint').textContent = state.loginActive ? 'Conclua o login na tela abaixo. As chamadas à API aguardam o encerramento deste processo.' : state.accountState === 'authenticated' ? 'Sua sessão será reutilizada. Se o provedor solicitar, você poderá entrar novamente por aqui.' : detail;
-    if (!state.loginActive && rfb) { closeRemote(); if (state.accountState === 'authenticated') notice('DeepSeek conectado. Você já pode gerar uma chave.'); }
+    const data = await api('/api/me/accounts');
+    if (!me) return;
+    accountList = data.accounts; renderAccounts(accountList);
+    const selected = accountList.find(account => account.provider === remoteProvider);
+    if (selected && !selected.loginActive && rfb) {
+      closeRemote();
+      if (selected.accountState === 'authenticated') notice(selected.name + ' conectado. Seus modelos estão disponíveis.');
+    }
   } catch (error) { notice(error.message); } finally { refreshing = false; }
 }
 async function keys() {
@@ -61,28 +87,30 @@ async function users() {
   const audit = await api('/api/admin/audit'); el('audit').textContent = audit.events.map(event => new Date(event.created_at).toLocaleString('pt-BR')+' · '+event.action).join('\n') || 'Nenhuma atividade.';
 }
 function share(data) { el('link-value').textContent = data.url; el('share-link').hidden = false; }
-async function remote() {
+async function remote(provider) {
   if (!RFB) RFB = (await import('/novnc/core/rfb.js')).default;
-  closeRemote();
-  const data = await api('/api/me/remote-ticket','POST',{});
+  if (remoteProvider && remoteProvider !== provider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{});
+  closeRemote(); remoteProvider = provider;
+  const data = await api('/api/me/accounts/' + provider + '/remote-ticket','POST',{});
+  el('remote-title').textContent = 'Entre no ' + (accountList.find(account => account.provider === provider)?.name || provider);
   el('remote-panel').hidden = false;
-  rfb = new RFB(el('remote'), 'wss://' + location.host + '/api/me/remote?ticket=' + encodeURIComponent(data.ticket),{ shared:false });
+  rfb = new RFB(el('remote'), (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/me/remote?ticket=' + encodeURIComponent(data.ticket),{ shared:false });
   rfb.scaleViewport = true; rfb.resizeSession = false;
   const current = rfb;
   current.addEventListener('disconnect',()=> { if (rfb === current) { rfb = undefined; el('remote-panel').hidden = true; void refresh(); } });
   el('remote-panel').scrollIntoView({behavior:'smooth',block:'start'});
 }
-async function operation(action) {
-  if (action === 'disconnect' && !confirm('Desconectar e apagar a sessão DeepSeek salva? Você precisará fazer login novamente.')) return;
-  if (action !== 'connect') closeRemote();
-  const data = await api('/api/me/connection/'+action,'POST',{});
+async function operation(action, provider) {
+  if (action === 'disconnect' && !confirm('Desconectar e apagar a sessão ' + provider + ' salva? Você precisará fazer login novamente.')) return;
+  if (remoteProvider === provider || action === 'connect') closeRemote();
+  const data = await api('/api/me/accounts/' + provider + '/connection/'+action,'POST',{});
   if (data.operationId) {
     notice('Preparando sua conexão…');
     for (let attempt = 0; attempt < 100; attempt++) {
       await new Promise(resolve => setTimeout(resolve,2000));
       const result = await api('/api/me/operations/'+data.operationId);
       if (result.status === 'failed') throw new Error(result.error);
-      if (result.status === 'done') { notice(); if (action === 'connect') { try { await remote(); } catch { await refresh(); } } await refresh(); return; }
+      if (result.status === 'done') { notice(); if (action === 'connect') { try { await remote(provider); } catch { await refresh(); } } await refresh(); return; }
     }
     throw new Error('A operação continua em andamento. Atualize o status em instantes.');
   }
@@ -90,9 +118,8 @@ async function operation(action) {
 el('auth-form').addEventListener('submit',event => { event.preventDefault(); void guarded(async () => { const path = '/api/auth/' + (mode === 'redeem' ? 'redeem' : mode === 'setup' ? 'setup' : 'login'); await api(path,'POST',{ email:el('email').value, password:el('password').value, token:mode === 'redeem' ? linkToken : el('bootstrap').value }); el('password').value=''; el('bootstrap').value=''; await signedIn(); }); });
 el('logout').onclick = () => guarded(async () => { await api('/api/auth/logout','POST',{}); me = null; closeRemote(); showAuth(); });
 el('refresh').onclick = () => guarded(refresh);
-for (const button of document.querySelectorAll('[data-action]')) button.onclick = () => guarded(() => operation(button.dataset.action));
-el('remote-close').onclick = () => guarded(async () => { await api('/api/me/connection/cancel','POST',{}); closeRemote(); await refresh(); });
-el('remote-retry').onclick = () => guarded(async () => { await api('/api/me/connection/cancel','POST',{}); closeRemote(); await operation('connect'); });
+el('remote-close').onclick = () => guarded(async () => { if (remoteProvider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{}); closeRemote(); remoteProvider = undefined; await refresh(); });
+el('remote-retry').onclick = () => guarded(async () => { const provider = remoteProvider; if (!provider) return; await api('/api/me/accounts/' + provider + '/connection/cancel','POST',{}); closeRemote(); await operation('connect', provider); });
 el('key-form').onsubmit = event => { event.preventDefault(); void guarded(async () => { const data = await api('/api/me/keys','POST',{name:el('key-name').value}); el('key-secret').textContent=data.key; el('new-key').hidden=false; el('key-name').value=''; await keys(); }); };
 el('dismiss-key').onclick = () => { el('key-secret').textContent=''; el('new-key').hidden=true; };
 el('copy-key').onclick = () => copy(el('key-secret').textContent);

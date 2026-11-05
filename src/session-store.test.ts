@@ -86,7 +86,7 @@ test('Login and API cannot reserve the same profile simultaneously', async () =>
   let release: (() => Promise<void>) | undefined;
   try {
     release = await lockProfile();
-    await assert.rejects(lockProfile(), /perfil DeepSeek está em uso/);
+    await assert.rejects(lockProfile(), /perfil está em uso/);
     await release();
     release = await lockProfile();
   } finally {

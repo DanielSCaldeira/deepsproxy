@@ -2,7 +2,7 @@ export const statusPage = String.raw`<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeepsProxy · Status</title>
+  <title>Proxy IA · Status</title>
   <style>
     :root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif;background:#101418;color:#edf2f4}
     *{box-sizing:border-box}body{margin:0}main{max-width:1040px;margin:auto;padding:52px 24px}
@@ -26,7 +26,7 @@ export const statusPage = String.raw`<!doctype html>
   </style>
 </head>
 <body><main>
-  <header><div class="brand">Deeps<span>Proxy</span></div><button id="refresh" type="button">Atualizar status</button></header>
+  <header><div class="brand">Proxy <span>IA</span></div><button id="refresh" type="button">Atualizar status</button></header>
   <div class="intro"><h1>Status da conexão</h1><p class="muted">Acompanhe o servidor local e a sessão do DeepSeek.</p></div>
   <div id="notice" role="status" hidden></div>
   <section class="panel" id="auth" hidden>
@@ -35,12 +35,12 @@ export const statusPage = String.raw`<!doctype html>
   </section>
   <section class="cards" aria-live="polite">
     <article class="card"><p class="label">SERVIDOR LOCAL</p><strong class="value" id="server">Verificando…</strong><p class="detail" id="server-detail">Consultando o proxy.</p></article>
-    <article class="card"><p class="label">CONTA DEEPSEEK</p><strong class="value" id="session">Verificando…</strong><p class="detail" id="session-detail">Verificando a autenticação.</p></article>
+    <article class="card"><p class="label">CONTA DO SERVIÇO</p><strong class="value" id="session">Verificando…</strong><p class="detail" id="session-detail">Verificando a autenticação.</p></article>
     <article class="card"><p class="label">SESSÃO SALVA</p><strong class="value" id="saved">Verificando…</strong><p class="detail" id="saved-detail">Conferindo a persistência do login.</p></article>
   </section>
   <section class="panel"><h2>Conectar seu aplicativo</h2><p class="detail" style="margin-bottom:16px">Use este endereço como URL base no Zed, Continue ou outro cliente compatível.</p>
     <div class="url"><code id="base"></code><button id="copy" type="button">Copiar endereço</button></div>
-    <p class="detail" style="margin-top:16px">Modelo: <code>deepseek-v4-flash</code></p>
+    <p class="detail" style="margin-top:16px">Consulte os IDs de modelo na listagem abaixo.</p>
     <nav class="links"><a href="/docs">Documentação da API ↗</a><a href="/health">Saúde do servidor ↗</a><a href="/v1/models">Modelos disponíveis ↗</a></nav>
   </section>
   <footer class="foot"><span id="updated">Aguardando primeira consulta</span><span>Atualização automática a cada 15 segundos</span></footer>
@@ -64,39 +64,40 @@ export const statusPage = String.raw`<!doctype html>
       }
       if (!response.ok) throw new Error('status');
       const data = await response.json();
+      const account = data.account || data.deepseek;
       el('auth').hidden = true; el('notice').hidden = true;
       value('server', 'Em execução', 'good');
       el('server-detail').textContent = 'Ativo há ' + Math.floor(data.uptimeSeconds / 60) + ' min · API disponível.';
       const states = {
-        authenticated:['Conectada','good','Login reconhecido pelo DeepSeek.'],
+        authenticated:['Conectada','good','Login reconhecido pelo serviço.'],
         login_required:['Login necessário','warn','A sessão precisa ser autenticada novamente.'],
-        suspended:['Conta suspensa','bad','O DeepSeek suspendeu a conta. Os envios estão interrompidos.'],
+        suspended:['Conta suspensa','bad','O provedor suspendeu a conta. Os envios estão interrompidos.'],
         not_initialized:['Aguardando navegador','warn','O navegador do proxy ainda não está disponível.'],
-        unavailable:['Indisponível','bad','Não foi possível verificar o chat do DeepSeek.']
+        unavailable:['Indisponível','bad','Não foi possível verificar o chat do serviço.']
       };
-      const state = data.deepseek.profileInUse ? ['Perfil em uso','warn','Outro processo está usando o perfil do DeepSeek.'] : states[data.deepseek.state] || states.unavailable;
+      const state = account.profileInUse ? ['Perfil em uso','warn','Outro processo está usando o perfil do serviço.'] : states[account.state] || states.unavailable;
       value('session',state[0],state[1]);
-      el('session-detail').textContent = state[2] + (data.deepseek.busy ? ' Há uma consulta em andamento.' : '');
-      if (data.deepseek.suspendedUntil) el('session-detail').textContent += ' Suspensão informada até ' + data.deepseek.suspendedUntil + '.';
-      if (data.deepseek.nextAllowedAt && new Date(data.deepseek.nextAllowedAt) > new Date()) {
-        el('session-detail').textContent += ' Próximo envio permitido a partir de ' + new Date(data.deepseek.nextAllowedAt).toLocaleTimeString('pt-BR') + '.';
+      el('session-detail').textContent = state[2] + (account.busy ? ' Há uma consulta em andamento.' : '');
+      if (account.suspendedUntil) el('session-detail').textContent += ' Suspensão informada até ' + account.suspendedUntil + '.';
+      if (account.nextAllowedAt && new Date(account.nextAllowedAt) > new Date()) {
+        el('session-detail').textContent += ' Próximo envio permitido a partir de ' + new Date(account.nextAllowedAt).toLocaleTimeString('pt-BR') + '.';
       }
-      value('saved',data.deepseek.sessionSaved ? 'Salva neste computador' : 'Ainda não salva',data.deepseek.sessionSaved ? 'good' : 'warn');
-      el('saved-detail').textContent = data.deepseek.sessionSaved ? 'A sessão será reutilizada ao reiniciar. O DeepSeek pode exigir novo login se ela expirar.' : 'O login será salvo após confirmar a autenticação.';
-      if (data.deepseek.profileInUse) {
-        el('notice').textContent = 'Se a janela de login estiver aberta, conclua o login nela. O proxy se conectará automaticamente após a confirmação. Caso contrário, encerre o outro processo que está usando o perfil.';
+      value('saved',account.sessionSaved ? 'Salva neste computador' : 'Ainda não salva',account.sessionSaved ? 'good' : 'warn');
+      el('saved-detail').textContent = account.sessionSaved ? 'A sessão será reutilizada ao reiniciar. O provedor pode exigir novo login se ela expirar.' : 'O login será salvo após confirmar a autenticação.';
+      if (account.profileInUse) {
+        el('notice').textContent = 'Outro processo está usando o perfil do serviço. Encerre a outra instância do proxy e atualize esta página.';
         el('notice').hidden = false;
-      } else if (data.deepseek.state === 'login_required' || data.deepseek.state === 'not_initialized') {
-        el('notice').textContent = 'Se houver uma janela do DeepSeek aberta, faça o login nela e mantenha-a aberta: a API utiliza essa mesma sessão. Caso contrário, pare o proxy e execute npm run login na pasta do projeto; esse comando também inicia a API.';
+      } else if (account.state === 'login_required' || account.state === 'not_initialized') {
+        el('notice').textContent = 'O login das contas é feito pelo painel do Proxy IA: execute make live, abra http://localhost:3440, clique em Conectar no card do serviço e conclua o login na tela remota dentro do site.';
         el('notice').hidden = false;
       }
-      el('updated').textContent = 'Consultado às ' + new Date(data.timestamp).toLocaleTimeString('pt-BR') + (data.deepseek.checkedAt ? ' · Sessão verificada às ' + new Date(data.deepseek.checkedAt).toLocaleTimeString('pt-BR') : '');
+      el('updated').textContent = 'Consultado às ' + new Date(data.timestamp).toLocaleTimeString('pt-BR') + (account.checkedAt ? ' · Sessão verificada às ' + new Date(account.checkedAt).toLocaleTimeString('pt-BR') : '');
     } catch {
       value('server','Sem resposta','bad'); value('session','Não verificada','warn'); value('saved','Não verificada','warn');
       el('server-detail').textContent = 'Não foi possível consultar o proxy.';
       el('session-detail').textContent = 'Aguardando conexão com o servidor.';
       el('saved-detail').textContent = 'Aguardando conexão com o servidor.';
-      el('notice').textContent = 'O servidor não respondeu. Confirme se o DeepsProxy está em execução e tente atualizar.';
+      el('notice').textContent = 'O servidor não respondeu. Confirme se o Proxy IA está em execução e tente atualizar.';
       el('notice').hidden = false;
     } finally { pending = false; el('refresh').disabled = false; }
   }

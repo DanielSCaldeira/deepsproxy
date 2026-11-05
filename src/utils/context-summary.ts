@@ -49,7 +49,7 @@ function summaryBudget(targetLimit: number): number {
 }
 
 function cacheKeys(model: string, systems: Message[], history: Message[], budget: number): string[] {
-  const base = sha256(`${model}\0${budget}\0${JSON.stringify(systems)}`);
+  const base = sha256(`${process.env.PROVIDER || 'deepseek'}\0${process.env.PROVIDER_PROFILE_DIR || process.env.QWEN_PROFILE_DIR || process.env.DEEPSEEK_PROFILE_DIR || ''}\0${model}\0${budget}\0${JSON.stringify(systems)}`);
   let current = base;
   const keys: string[] = [];
   for (const message of history) {

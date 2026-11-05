@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { migrate, type Database } from './production/database.ts';
 import { createGateway } from './production/gateway.ts';
-import { Workers } from './production/workers.ts';
+import { provisionMessage, Workers } from './production/workers.ts';
 import { UserQueue } from './production/queue.ts';
 import { digest, HttpError, workerToken } from './production/security.ts';
 import { classifySessionError } from './services/playwright.ts';
@@ -14,16 +14,19 @@ const config: ProductionConfig = { origin:'https://proxy.test',database:'unused'
 class FakeWorkers extends Workers {
   calls: Array<{id:string;path:string}> = [];
   accounts = new Map<string,string>();
+  qwenAccounts = new Set<string>();
+  requestSignals = new Map<string, AbortSignal>();
   override async provision(action:string,id?:string) { return action==='list'?{workers:[]}:{host:`worker-${id}`}; }
   override async request(id:string,path:string,init:RequestInit={},start=true) {
     if(start) await this.ensure(id);
     this.calls.push({id,path});
+    if(init.signal) this.requestSignals.set(id,init.signal);
     if(path==='/api/status') return Response.json({deepseek:{state:this.accounts.get(id)||'authenticated',checkedAt:new Date().toISOString(),sessionSaved:true}});
     if(path==='/v1/chat/completions') {
       const body=JSON.parse(String(init.body));
       return body.stream ? new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}) : Response.json({choices:[{message:{content:'ok'}}]});
     }
-    if(path==='/v1/models') return Response.json({object:'list',data:[{id:'deepseek-v4-flash'}]});
+    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
     return Response.json({ok:true});
   }
 }
@@ -97,7 +100,9 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.equal((await request('/v1/models','GET',undefined,{},{Authorization:'Bearer '+config.bootstrap})).status,401);
     for (const [key,id] of [[aliceKey,aliceId],[bobKey,bobId]]) {
       const response=await request('/v1/models','GET',undefined,{},{'X-API-Key':key}); assert.equal(response.status,200); await response.text();
-      assert.equal(workers.calls.at(-1)!.id,id);
+      const models=await (await request('/v1/models','GET',undefined,{},{'X-API-Key':key})).json();
+      assert.ok(models.data.some((model:any)=>model.id==='deepseek-v4-flash'));
+      assert.equal(workers.queue(id).active,false);
     }
   });
   await t.test('streaming holds queue ownership until response is consumed',async()=> {
@@ -106,10 +111,48 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.match(await response.text(),/data: \[DONE\]/); assert.equal(workers.queue(aliceId).active,false);
     assert.equal(workers.calls.at(-1)!.id,aliceId);
   });
+  await t.test('two users have two isolated providers; one key routes both and Qwen disconnect preserves DeepSeek',async()=> {
+    const aliceAccounts=(await (await request('/api/me/accounts','GET',undefined,alice)).json()).accounts;
+    const bobAccounts=(await (await request('/api/me/accounts','GET',undefined,bob)).json()).accounts;
+    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['deepseek','qwen']);
+    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,4);
+    const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
+    const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
+    workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);
+    const callsBefore=workers.calls.length;
+    assert.equal((await request('/v1/chat/completions','POST',{model:'unknown',messages:[]},{},{Authorization:'Bearer '+aliceKey})).status,400);
+    assert.equal(workers.calls.length,callsBefore);
+    await workers.ensure(aliceQwen); await workers.status(aliceQwen);
+    await workers.ensure(bobQwen); await workers.status(bobQwen);
+    const catalog=await (await request('/v1/models','GET',undefined,{},{Authorization:'Bearer '+aliceKey})).json();
+    assert.ok(catalog.data.some((m:any)=>m.id==='qwen/fixture-model'));
+    const completion=await request('/v1/chat/completions','POST',{model:'qwen/fixture-model',messages:[]},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(completion.status,200); await completion.text();
+    assert.equal(workers.calls.at(-1)!.id,aliceQwen);
+    const identity=await gateway.identity(new Headers({Cookie:alice.cookie!}));
+    await workers.connect(aliceQwen,identity!.session);
+    const ticket=(await (await request('/api/me/accounts/qwen/remote-ticket','POST',{},alice)).json()).ticket;
+    const remote=await gateway.authorizeRemote(new Headers({Cookie:alice.cookie!}),ticket,config.origin);
+    assert.equal(remote.id,aliceQwen);
+    await assert.rejects(()=>gateway.authorizeRemote(new Headers({Cookie:bob.cookie!}),ticket,config.origin));
+    const ds=await request('/v1/chat/completions','POST',{model:'deepseek-v4-flash',messages:[],stream:true},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(ds.status,200); assert.equal(workers.queue(aliceId).active,true);
+    const operation=(await (await request('/api/me/accounts/qwen/connection/disconnect','POST',{},alice)).json()).operationId;
+    for(let i=0;i<50;i++) {
+      const result=await (await request('/api/me/operations/'+operation,'GET',undefined,alice)).json();
+      if(result.status==='done') break;
+      assert.notEqual(result.status,'failed'); await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.equal(workers.requestSignals.get(aliceId)!.aborted,false);
+    assert.equal((await workers.status(aliceQwen)).accountState,'login_required');
+    assert.equal((await workers.status(aliceId)).accountState,'authenticated');
+    await ds.text();
+  });
   await t.test('remote viewer requires owner session, origin, single-use ticket; API login exclusion',async()=> {
     const aliceIdentity=await gateway.identity(new Headers({Cookie:alice.cookie!}));
     await workers.connect(aliceId,aliceIdentity!.session);
-    assert.equal((await request('/v1/models','GET',undefined,{},{Authorization:'Bearer '+aliceKey})).status,409);
+    assert.equal((await request('/v1/models','GET',undefined,{},{Authorization:'Bearer '+aliceKey})).status,200);
+    assert.equal((await request('/v1/chat/completions','POST',{model:'deepseek-v4-flash',messages:[]},{},{Authorization:'Bearer '+aliceKey})).status,409);
     assert.equal((await request('/api/me/remote-ticket','POST',{},bob)).status,403);
     const ticket=(await (await request('/api/me/remote-ticket','POST',{},alice)).json()).ticket;
     await assert.rejects(()=>gateway.authorizeRemote(new Headers({Cookie:bob.cookie!}),ticket,config.origin));
@@ -181,4 +224,13 @@ test('idle browsers sleep with saved account status; expired login leases releas
   await workers.tick(async()=>false); assert.equal(workers.isLoggingIn(id),false); assert.equal(workers.queue(id).active,false);
   await workers.connect(id,'another-session');
   now+=1800_001; await workers.tick(async()=>true); assert.equal(workers.isLoggingIn(id),false); assert.equal(workers.queue(id).active,false);
+});
+
+test('provisioner failures surface the real cause and the next step', () => {
+  const exited = provisionMessage(502, { code: 'exited', detail: 'O navegador encerrou ao iniciar (exit=1 — Xvfb failed).' });
+  assert.match(exited, /etapa: exited/);
+  assert.match(exited, /Xvfb failed/);
+  assert.match(exited, /Recuperar navegador/);
+  assert.match(provisionMessage(429, {}), /desconecte outra conta/);
+  assert.match(provisionMessage(400, { error: 'Invalid account' }), /Invalid account/);
 });

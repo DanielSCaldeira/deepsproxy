@@ -1,5 +1,78 @@
 # Produção
 
+## Teste local com autenticação real
+
+Com Docker Desktop iniciado, execute `npm run live` e abra
+`http://localhost:3440`. Esse ambiente reutiliza os serviços de produção,
+incluindo PostgreSQL, provisionador, egress e noVNC. Os dados e perfis ficam
+isolados na instalação `proxy-ia-live`; cada conta autentica no serviço real.
+
+Na primeira execução, o token de configuração está no campo `BOOTSTRAP_TOKEN`
+de `.cache/proxy-ia-live.env`. Configure o acesso local ao painel, clique em
+**Conectar** no DeepSeek ou Qwen e conclua senha, código e desafios diretamente
+na tela remota. Não use a prévia em `3300` para esse teste: ela tem dados fictícios.
+
+`npm run live:status` consulta os serviços. `npm run live:stop` para os serviços
+e os navegadores desse laboratório preservando as sessões salvas. Ao iniciar
+novamente, os mesmos perfis serão reutilizados.
+
+Somente a porta `3440` no loopback é publicada. A exceção HTTP exige
+`LOCAL_LIVE_TEST=1` e origem exatamente `http://localhost:<porta>`; produção
+continua exigindo HTTPS. O navegador usa a mesma política de cookies Secure e
+HttpOnly, aceita pelo Chromium em localhost. As páginas externas dos provedores
+continuam usando HTTPS.
+
+## Proxy IA com DeepSeek e Qwen
+
+O painel **Minhas contas** lista os dois serviços. Cada usuário autentica uma
+conta em cada serviço; ações e telas remotas pertencem à conta selecionada.
+A URL pública e as chaves continuam únicas por usuário. Os IDs DeepSeek são
+preservados; os modelos Qwen aparecem como `qwen/<id-original>` depois do login.
+A listagem de modelos usa o catálogo salvo e não inicia navegadores.
+
+Os endpoints novos são `GET /api/me/accounts`,
+`GET /api/me/accounts/:provider/status`,
+`POST /api/me/accounts/:provider/connection/:action` e
+`POST /api/me/accounts/:provider/remote-ticket`, para `deepseek` e `qwen`.
+As rotas anteriores permanecem aliases DeepSeek.
+
+A migração cria uma conta por serviço para cada usuário. Para DeepSeek, o UUID
+da conta é o UUID anterior do usuário: os volumes `dsp_profile_UUID`, sessões e
+chaves existentes são preservados. Qwen começa com um perfil vazio. Há um
+contêiner/rede/perfil por **conta de serviço**, podendo haver dois navegadores
+por usuário; `MAX_ACTIVE_BROWSERS` continua sendo o teto global.
+
+Para atualizar uma instalação existente, obtenha as novas imagens e os arquivos
+de implantação deste commit e execute:
+
+```sh
+sh deploy/upgrade.sh
+```
+
+O script fecha novas entradas, aguarda até 180 segundos pelo encerramento do
+gateway, faz backup do banco e perfis, remove workers/redes antigos preservando
+volumes e atualiza os serviços. O gateway migra o banco e recria workers sob
+demanda; workers com imagem ou contrato incompatível também são rejeitados na
+inicialização. Se a atualização falhar, restaure banco e perfis do mesmo backup
+antes de retornar à versão anterior. Não execute versões diferentes sobre o
+mesmo perfil simultaneamente.
+
+Os backups novos incluem `accounts.tsv` com conta, usuário, provedor e volume.
+Mantenha o manifesto junto dos arquivos `.tar.gz`; `restore-profile.sh` o lê
+automaticamente. Backups antigos sem manifesto são interpretados como DeepSeek.
+A imagem usada na cópia é resolvida da configuração Compose, inclusive tags
+GHCR; preserve as variáveis de imagem ao executar os scripts.
+
+O egress inclui os hosts de chat/autenticação Qwen e os hosts de assets presentes
+na página pública (`assets.alicdn.com`, `g.alicdn.com`, `img.alicdn.com`). A
+homologação de login real deve confirmar eventuais hosts adicionais de desafios;
+a allowlist continua bloqueando redes privadas e outros destinos.
+
+Antes de publicar, valide com contas de homologação: login em ambos os serviços,
+geração, ferramentas, reinício e preservação do perfil DeepSeek. Os testes
+automatizados interceptam a rede e não comprovam a disponibilidade das contas
+nos serviços reais.
+
 Para revisar as telas localmente antes de publicar, execute `npm run preview` e
 abra http://127.0.0.1:3300. A faixa superior permite alternar entre usuário,
 administração, login, configuração inicial e convite, além dos estados da conta.
@@ -7,7 +80,7 @@ A prévia usa somente dados fictícios em memória, incluindo a tela remota
 ilustrativa; não acessa o DeepSeek, PostgreSQL nem Docker.
 
 O modo de produção é separado do modo local. O painel usa PostgreSQL e cada
-usuário possui um contêiner de navegador, uma rede privada e um volume de perfil
+conta de serviço possui um contêiner de navegador, uma rede privada e um volume de perfil
 exclusivos. O gateway público encaminha chamadas e telas somente ao proprietário.
 O socket Docker fica exclusivamente no provisionador interno.
 
@@ -37,13 +110,13 @@ de 1,5 GB, uma CPU e 256 processos.
    senha, abre **Conectar**, conclui o login DeepSeek e gera sua chave.
 
 O segredo do DeepSeek é digitado diretamente na janela remota do provedor. O
-DeepsProxy persiste cookies e armazenamento do navegador no volume privado, sem
+Proxy IA persiste cookies e armazenamento do navegador no volume privado, sem
 registrá-los em logs. O administrador da VPS continua tendo acesso técnico ao
 disco; os perfis e os backups devem receber a mesma proteção de credenciais.
 
 Não copie o perfil de desenvolvimento para a VPS. Não há importação automática
-de contas ou da antiga chave `local`. `npm start` e `npm run login` continuam
-disponíveis para o modo local; `npm run build && npm run start:production` é o
+de contas ou da antiga chave `local`. `npm start` continua
+disponível para o modo local (o login por janela externa foi removido; use o painel); `npm run build && npm run start:production` é o
 gateway, que exige os serviços internos do Compose.
 
 ## Status individual e operação pelo painel
@@ -56,7 +129,7 @@ Navegadores ociosos são desligados após 15 minutos. O último estado verificad
 da conta é preservado em PostgreSQL e identificado como histórico no painel. A
 próxima chamada inicia o navegador automaticamente. No máximo cinco ficam ativos
 por padrão (`MAX_ACTIVE_BROWSERS`); capacidade cheia retorna 503 e `Retry-After`.
-Há uma chamada em execução e até três em espera por usuário, com espera máxima
+Há uma chamada em execução e até três em espera por conta de serviço, com espera máxima
 de 120 segundos. A fila inclui a duração completa do streaming.
 
 **Conectar** reserva o navegador para login e bloqueia novas chamadas até o fim
@@ -169,8 +242,9 @@ Crie o environment `production` em Settings → Environments e configure:
 O deploy usa `GITHUB_TOKEN` para autenticar no GHCR e o remove ao terminar. A
 VPS precisa apenas de Docker e Compose; o código é atualizado pelas imagens
 publicadas. Faça o pull antes de recriar os serviços, como o workflow faz: uma
-falha de pull não deve derrubar a stack em execução. Workers antigos com label
-`dsp.managed=worker` continuam sendo recriados pelo provisionador sob demanda.
+falha de pull não deve derrubar a stack em execução. Após o pull, o workflow
+atualiza os arquivos Compose/deploy e executa `upgrade.sh`, incluindo backup e
+remoção dos workers antigos com preservação dos perfis.
 
 ## Validação
 

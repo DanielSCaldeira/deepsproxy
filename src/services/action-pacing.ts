@@ -36,7 +36,7 @@ export class ActionPacer {
       if (range.maxMs === 0) return;
       const delayMs = range.minMs + Math.floor(this.random() * (range.maxMs - range.minMs + 1));
       if (delayMs === 0) return;
-      log.info('Waiting before DeepSeek action', { action, delayMs });
+      log.info('Waiting before provider action', { action, delayMs });
       diagnostic('action.wait', { action, delayMs });
       await this.sleep(delayMs);
     });
@@ -46,6 +46,10 @@ export class ActionPacer {
 const pacer = new ActionPacer();
 
 export async function pauseBeforeDeepSeekAction(action: string): Promise<void> {
+  return pauseBeforeProviderAction(action);
+}
+
+export async function pauseBeforeProviderAction(action: string): Promise<void> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   await pacer.pause(action);
 }

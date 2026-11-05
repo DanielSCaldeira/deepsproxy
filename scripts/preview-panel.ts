@@ -7,6 +7,7 @@ import { panelPage } from '../src/production/panel.ts';
 // Visual review only: no database, Docker, real keys, or provider calls.
 const app = new Hono();
 const states = new Map<string,string>();
+const activeProviders = new Map<string,string>();
 const keys = new Map<string,any[]>();
 const users = [
   {id:'admin-demo',email:'admin@example.com',role:'admin',blocked:false},
@@ -30,10 +31,10 @@ document.getElementById('preview-state').addEventListener('change',async event=>
 `;
   return c.body(prefix+source.replace('fetch(path,','fetch(previewUrl(path),'),200,{'Content-Type':'text/javascript; charset=utf-8'});
 });
-app.post('/__preview/state',async c=> { states.set(view(c.req.url),(await c.req.json()).state); return c.json({ok:true}); });
+app.post('/__preview/state',async c=> { states.set(view(c.req.url)+':'+(activeProviders.get(view(c.req.url))||'deepseek'),(await c.req.json()).state); return c.json({ok:true}); });
 app.get('/novnc/core/rfb.js',c=>c.body(`export default class Preview {
   constructor(target) {
-    target.innerHTML='<div style="padding:36px;text-align:center;color:#daeaf5;font-family:system-ui"><h2>Tela do navegador remoto</h2><p>Em produção, o DeepSeek da VPS aparece aqui para concluir o login.</p><p>Esta prévia não solicita senha nem acessa sua conta.</p><button id="simulate-login" style="padding:12px;border-radius:8px;cursor:pointer">Simular login concluído</button></div>';
+    target.innerHTML='<div style="padding:36px;text-align:center;color:#daeaf5;font-family:system-ui"><h2>Tela do navegador remoto</h2><p>Em produção, o serviço selecionado na VPS aparece aqui para concluir o login.</p><p>Esta prévia não solicita senha nem acessa sua conta.</p><button id="simulate-login" style="padding:12px;border-radius:8px;cursor:pointer">Simular login concluído</button></div>';
     target.querySelector('button').onclick=async()=> { const name=new URLSearchParams(location.search).get('preview') || 'user'; await fetch('/__preview/state?preview='+name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:'authenticated'})}); document.getElementById('refresh').click(); };
   }
   addEventListener() {} disconnect() {}
@@ -47,16 +48,18 @@ app.all('/api/*',async c=> {
   if(path==='/api/auth/logout') { c.header('Set-Cookie','preview_signed=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict'); return c.json({ok:true}); }
   if(!authenticated) return c.json({error:{message:'Entre no painel de demonstração.'}},401);
   if(path==='/api/me') return c.json({...users[name==='admin'?0:1],csrf:'demo'});
-  if(path==='/api/me/status') { const state=states.get(name)||'authenticated'; return c.json({state,accountState:state==='sleeping'?'authenticated':state==='connecting'?'login_required':state,runtimeState:state==='sleeping'?'sleeping':state==='unavailable'?'unavailable':'running',sessionSaved:!['login_required','not_initialized'].includes(state),checkedAt:new Date().toISOString(),busy:false,loginActive:state==='connecting',queueDepth:0}); }
+  const status=(provider:string)=>{ const state=states.get(name+':'+provider)||(provider==='deepseek'?'authenticated':'not_initialized'); return {id:provider,provider,name:provider==='deepseek'?'DeepSeek':'Qwen',state,accountState:state==='sleeping'?'authenticated':state==='connecting'?'login_required':state,runtimeState:state==='sleeping'?'sleeping':state==='unavailable'?'unavailable':'running',sessionSaved:!['login_required','not_initialized','connecting'].includes(state),checkedAt:new Date().toISOString(),busy:false,loginActive:state==='connecting',queueDepth:0,models:provider==='deepseek'?['deepseek-v4-flash','deepseek-v4-flash-thinking']:state==='authenticated'?['qwen/demo-model']:[]}; };
+  if(path==='/api/me/accounts') return c.json({accounts:[status('deepseek'),status('qwen')]});
+  if(path==='/api/me/status') return c.json(status('deepseek'));
   if(path==='/api/me/keys') {
     if(!keys.has(name)) keys.set(name,[{id:'key-example',name:'Zed pessoal',prefix:'dsp_EXEMPLO',revoked_at:null}]);
     if(c.req.method==='POST') { const id=randomUUID(); keys.get(name)!.push({id,name:(await c.req.json()).name,prefix:'dsp_EXEMPLO',revoked_at:null}); return c.json({id,key:'dsp_EXEMPLO_SEM_VALIDADE_EM_PRODUCAO'}); }
     return c.json({keys:keys.get(name)});
   }
   if(path.startsWith('/api/me/keys/')) { const key=keys.get(name)?.find(k=>k.id===path.split('/').at(-1)); if(key) key.revoked_at=new Date().toISOString(); return c.json({ok:true}); }
-  if(path.startsWith('/api/me/connection/')) { const action=path.split('/').at(-1); states.set(name,action==='connect'?'connecting':action==='disconnect'?'login_required':action==='cancel'?'login_required':'authenticated'); return c.json({operationId:'demo'}); }
+  if(path.includes('/connection/')) { const provider=path.startsWith('/api/me/accounts/')?path.split('/')[4]:'deepseek'; activeProviders.set(name,provider); const action=path.split('/').at(-1); states.set(name+':'+provider,action==='connect'?'connecting':action==='disconnect'?'login_required':action==='cancel'?'login_required':'authenticated'); return c.json({operationId:'demo'}); }
   if(path.startsWith('/api/me/operations/')) return c.json({status:'done'});
-  if(path==='/api/me/remote-ticket') return c.json({ticket:'demo'});
+  if(path.endsWith('/remote-ticket')) return c.json({ticket:'demo'});
   if(path==='/api/admin/status') return c.json({activeBrowsers:2,capacity:5,remoteLogins:0});
   if(path==='/api/admin/users') return c.json({users});
   if(path==='/api/admin/audit') return c.json({events:[{created_at:new Date().toISOString(),action:'Convite de demonstração criado'},{created_at:new Date().toISOString(),action:'Usuário de demonstração conectado'}]});
@@ -65,5 +68,6 @@ app.all('/api/*',async c=> {
   if(path.endsWith('/block')) { const user=users.find(u=>u.id===path.split('/').at(-2)); if(user) user.blocked=(await c.req.json()).blocked; return c.json({ok:true}); }
   return c.json({error:{message:'Ação indisponível nesta prévia.'}},404);
 });
-serve({fetch:app.fetch,hostname:'127.0.0.1',port:3300});
-console.info('Prévia local: http://127.0.0.1:3300/?preview=user');
+const port=Number(process.env.PREVIEW_PORT || 3300);
+serve({fetch:app.fetch,hostname:'127.0.0.1',port});
+console.info(`Prévia local: http://127.0.0.1:${port}/?preview=user`);

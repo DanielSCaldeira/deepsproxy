@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getProfileDirectory } from './session-store.ts';
 import { createLogger } from '../utils/logger.ts';
 
 const log = createLogger('telemetry');
@@ -36,7 +37,7 @@ interface PersistedShape {
 
 function persistFilePath(): string {
   if (process.env.DEEPSPROXY_TELEMETRY_FILE) return path.resolve(process.env.DEEPSPROXY_TELEMETRY_FILE);
-  const profileDir = process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile';
+  const profileDir = getProfileDirectory();
   return path.resolve(profileDir, '.telemetry.json');
 }
 

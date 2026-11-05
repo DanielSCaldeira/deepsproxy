@@ -9,10 +9,10 @@ const actionableErrorFields = {
 export const openApiSpec = {
   openapi: '3.0.0',
   info: {
-    title: 'DeepSproxy API',
+    title: 'Proxy IA API',
     version: '1.0.0',
     description:
-      'OpenAI-compatible proxy for DeepSeek models via browser automation. ' +
+      'OpenAI-compatible proxy for DeepSeek and Qwen models via browser automation. ' +
       'Supports streaming, tool calling, and thinking models.',
   },
   servers: [{ url: '/' }],
