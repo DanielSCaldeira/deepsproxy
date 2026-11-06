@@ -176,6 +176,8 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.equal(copilot.status,200); await copilot.text();
     assert.equal(workers.calls.at(-1)!.id,aliceCopilot.id);
     await workers.stopAccount(aliceCopilot.id); // Keep the fixture within MAX_ACTIVE_BROWSERS.
+    const aliceKimi=aliceAccounts.find((a:any)=>a.provider==='kimi');
+    assert.equal(aliceKimi.name,'Kimi'); assert.equal(aliceKimi.manualLoginConfirmation,true);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);

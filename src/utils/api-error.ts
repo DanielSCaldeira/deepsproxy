@@ -22,10 +22,11 @@ export function apiError(error: unknown, code: string) {
   const ernie = process.env.PROVIDER === 'ernie';
   const gemini = process.env.PROVIDER === 'gemini';
   const copilot = process.env.PROVIDER === 'copilot';
-  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : cohere ? 'Cohere' : ernie ? 'Ernie' : gemini ? 'Gemini' : copilot ? 'Copilot' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
-  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : cohere ? 'https://dashboard.cohere.com/playground/chat' : ernie ? 'https://wenxin.baidu.com/' : gemini ? 'https://gemini.google.com/app' : copilot ? 'https://copilot.microsoft.com/chats/new' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
+  const kimi = process.env.PROVIDER === 'kimi';
+  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : cohere ? 'Cohere' : ernie ? 'Ernie' : gemini ? 'Gemini' : copilot ? 'Copilot' : kimi ? 'Kimi' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
+  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : cohere ? 'https://dashboard.cohere.com/playground/chat' : ernie ? 'https://wenxin.baidu.com/' : gemini ? 'https://gemini.google.com/app' : copilot ? 'https://copilot.microsoft.com/chats/new' : kimi ? 'https://www.kimi.ai/' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
   const originalCode = code;
-  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity|cohere|ernie|gemini|copilot)_/, '');
+  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity|cohere|ernie|gemini|copilot|kimi)_/, '');
   const technical = error instanceof Error ? error.message : String(error);
   const guard = getGenerationGuard().status();
   const stored = ['account_suspended', 'login_required'].includes(kind) ? guard.block?.originalMessage : null;
@@ -60,7 +61,7 @@ export function apiError(error: unknown, code: string) {
   // Gemini uses Google sign-in itself; it is completed manually in the remote browser.
   if (gemini) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com a conta Google (senha, verificação em duas etapas e confirmação de dispositivo, quando solicitadas)').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   if (copilot) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com a conta Microsoft (inclusive a verificação em duas etapas)');
-  if (chatgpt || claude || cohere || copilot) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
+  if (chatgpt || claude || cohere || copilot || kimi) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   return { error: {
     // Many OpenAI-compatible clients display only message, so it must stand alone.
     message: `${original || technical}\n\nO que fazer: ${action}`,
