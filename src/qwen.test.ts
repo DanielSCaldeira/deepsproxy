@@ -103,3 +103,49 @@ test('Qwen browser adapter persists manual login and exposes models and cancella
     assert.equal((await provider.status()).busy,false);
   } finally { await provider.close(); await browser.close(); await rm(directory,{recursive:true,force:true,maxRetries:3}); }
 });
+
+test('Qwen worker login uses the plain Chromium and Concluir login validates and saves the profile', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'qwen-login-'));
+  const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
+  const browser = await chromium.launch();
+  const { QwenProvider } = await import('./providers/qwen.ts');
+  const provider = new QwenProvider();
+  let authenticated = false, reopened = 0, humanRunning = true;
+  try {
+    const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; },
+      start: async () => { reopened++; humanRunning = true; } };
+    const launch = async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await context.route('https://auth.qwen.ai/**', route => {
+        const headers = { 'Access-Control-Allow-Origin': 'https://chat.qwen.ai', 'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'authorization,content-type,source,version,x-request-id,x-request-origin' };
+        if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+        return route.fulfill({ headers, contentType: 'application/json', body: JSON.stringify({ success: true,
+          data: authenticated ? { id: 'fixture-user' } : { is_login: false } }) });
+      });
+      await context.route('https://chat.qwen.ai/**', route => route.fulfill({ contentType: 'text/html', body: '<p>chat</p>' }));
+      await page.goto('https://chat.qwen.ai/');
+      // Guests also carry a bearer token; only the auth service response proves the login.
+      Object.assign(provider, { context, page, token: 'Bearer fixture' });
+    };
+    Object.assign(provider, { manualLogin: true, interactive: fake, launch });
+    assert.equal(provider.isReady(), true);
+    assert.equal((await provider.status()).confirmationRequired, true);
+    await assert.rejects(() => provider.confirmLogin(true), /Concluir login/);
+    await assert.rejects(() => provider.models(), /login is required/);
+    await assert.rejects(() => provider.finishLogin(), /Conclua o acesso/);
+    assert.equal(reopened, 1, 'an early confirmation reopens the sign-in window');
+    assert.equal(await createSessionStore(directory).hasSavedSession(), false);
+    authenticated = true;
+    await provider.finishLogin();
+    assert.equal(humanRunning, false);
+    assert.equal((await provider.status()).state, 'authenticated');
+    assert.equal(await createSessionStore(directory).hasSavedSession(), true);
+    const page = provider.getActivePage(); await provider.initialize(false); assert.equal(provider.getActivePage(), page);
+  } finally {
+    await provider.close(); await browser.close();
+    if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
+    await rm(directory, { recursive: true, force: true, maxRetries: 3 });
+  }
+});

@@ -10,7 +10,7 @@ import { panelPage } from './panel.ts';
 
 const providerNames: Record<string, string> = { deepseek: 'DeepSeek', qwen: 'Qwen', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', copilot: 'Copilot', mistral: 'Mistral', grok: 'Grok', meta: 'Meta AI', cohere: 'Cohere', perplexity: 'Perplexity', kimi: 'Kimi', quillbot: 'QuillBot', ernie: 'Ernie' };
 // Providers whose login is confirmed by the user in the panel ('Concluir login').
-const manualLoginProviders = new Set<string>(['deepseek', 'chatgpt', 'claude', 'gemini', 'copilot', 'mistral', 'grok', 'meta', 'cohere', 'perplexity', 'kimi', 'quillbot', 'ernie']);
+const manualLoginProviders = new Set<string>(['deepseek', 'qwen', 'chatgpt', 'claude', 'gemini', 'copilot', 'mistral', 'grok', 'meta', 'cohere', 'perplexity', 'kimi', 'quillbot', 'ernie']);
 
 type Identity = { id: string; email: string; role: string; session: string; csrf: string };
 type Env = { Variables: { identity: Identity } };

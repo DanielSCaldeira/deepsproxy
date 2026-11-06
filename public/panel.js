@@ -26,7 +26,7 @@ async function copy(value) { try { await navigator.clipboard.writeText(value); n
 function textCell(row, text) { const cell = document.createElement('td'); cell.textContent = text; row.append(cell); return cell; }
 function button(parent, title, run, danger = false) { const button = document.createElement('button'); button.textContent = title; button.className = danger ? 'danger' : 'secondary'; button.addEventListener('click', () => guarded(run)); parent.append(button); }
 function needsLoginConfirmation(account) {
-  return account?.manualLoginConfirmation ?? ['deepseek', 'chatgpt', 'claude', 'perplexity', 'cohere', 'ernie', 'gemini', 'copilot', 'kimi', 'mistral', 'quillbot', 'meta', 'grok'].includes(account?.provider);
+  return account?.manualLoginConfirmation ?? ['deepseek', 'qwen', 'chatgpt', 'claude', 'perplexity', 'cohere', 'ernie', 'gemini', 'copilot', 'kimi', 'mistral', 'quillbot', 'meta', 'grok'].includes(account?.provider);
 }
 // Extra guidance for login screens that are not obvious (language, account type).
 const loginHints = {

@@ -7,11 +7,15 @@ import type { ProviderAdapter, ProviderEvent, ProviderModel, ProviderStatus } fr
 import { GenerationGuard, getGenerationGuard, retryAfterMilliseconds, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
 import { pauseBeforeProviderAction } from '../services/action-pacing.ts';
 import { createSessionStore } from '../services/session-store.ts';
+import { InteractiveBrowser } from '../services/interactive-browser.ts';
+import { Mutex } from '../utils/mutex.ts';
+import { setTimeout as delay } from 'node:timers/promises';
 import { qwenBrowserFetch, qwenResponseJson, type QwenResponse } from './qwen-browser.ts';
 import { parseQwenStream, qwenModels, qwenPayload } from './qwen-protocol.ts';
 
 const ORIGIN = 'https://chat.qwen.ai';
 const AUTH_ORIGIN = 'https://auth.qwen.ai';
+const SIGN_IN = `${ORIGIN}/auth?action=signin`;
 
 /** One persistent profile/account per isolated process; login is exclusively manual. */
 export class QwenProvider implements ProviderAdapter {
@@ -31,7 +35,14 @@ export class QwenProvider implements ProviderAdapter {
   private guard?: GenerationGuard;
   private catalog?: { models: ProviderModel[]; checkedAt: number };
 
+  private readonly loginMutex = new Mutex();
+  private interactive?: InteractiveBrowser;
+  private manualLogin = false;
+  private transitioning = false;
+
   initialize(headless = true): Promise<void> {
+    if (this.manualLogin || this.transitioning) return Promise.resolve();
+    if (this.context && this.page && !this.page.isClosed()) return Promise.resolve();
     return this.initialization ??= this.launch(headless).catch(error => { this.initialization = undefined; throw error; });
   }
   private async launch(headless: boolean): Promise<void> {
@@ -41,13 +52,15 @@ export class QwenProvider implements ProviderAdapter {
       const worker = process.env.APP_MODE === 'worker';
       await pauseBeforeProviderAction('open-browser');
       configureBrowserUserAgent();
-      this.context = await chromium.launchPersistentContext(this.directory, {
+      const context = await chromium.launchPersistentContext(this.directory, {
         channel: getBrowserChannel(), headless, locale: BROWSER_LOCALE,
         // Hide Chromium's automation infobar; site-side detection is independent.
         ignoreDefaultArgs: ['--enable-automation'],
         args: [`--lang=${BROWSER_LOCALE}`, '--disable-dev-shm-usage', ...(worker ? ['--disable-quic', '--proxy-bypass-list=<-loopback>'] : [])],
         ...(worker ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
       });
+      this.context = context;
+      // Skipped while a fresh human login in the profile is still unconfirmed.
       await this.session.restoreSession(this.context);
       this.context.on('request', request => {
         if (![ORIGIN, AUTH_ORIGIN].includes(new URL(request.url()).origin)) return;
@@ -63,6 +76,8 @@ export class QwenProvider implements ProviderAdapter {
         } catch { /* Frontend will expose login status on the next validation. */ }
       });
       this.context.on('close', () => {
+        // The close event may not race a later launch's profile reservation.
+        if (this.context !== context) return;
         this.context = null; this.page = null; this.token = null; this.state = 'not_initialized';
         this.initialization = undefined;
         const unlock = this.unlock; this.unlock = undefined; void unlock?.();
@@ -72,11 +87,51 @@ export class QwenProvider implements ProviderAdapter {
       // Restore an existing session on the chat page. The sign-in form is
       // opened only when the user explicitly connects through the panel.
       await this.navigate(ORIGIN);
-    } catch (error) { await this.close(); throw error; }
+    } catch (error) { await this.closeAutomation(); throw error; }
   }
   getActivePage(): Page | null { return this.page; }
-  async connect(): Promise<void> {
-    await this.navigate(`${ORIGIN}/auth?action=signin`);
+  isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }
+  async connect(interactive = true): Promise<void> {
+    if (process.env.APP_MODE !== 'worker' || !interactive) {
+      await this.initialize(false);
+      await this.navigate(interactive ? SIGN_IN : ORIGIN);
+      return;
+    }
+    return this.loginMutex.withLock(async () => {
+      if (this.manualLogin && this.interactive?.running) return;
+      this.transitioning = true;
+      try {
+        await this.closeAutomation();
+        // Google rejects sign-in from a browser driven over CDP ("Esse navegador ou app pode não
+        // ser seguro"), so the person signs in through a plain Chromium on the same profile.
+        this.interactive ??= new InteractiveBrowser(this.directory, SIGN_IN);
+        await this.interactive.start(); this.manualLogin = true;
+      } finally { this.transitioning = false; }
+    });
+  }
+  async finishLogin(): Promise<void> {
+    return this.loginMutex.withLock(async () => {
+      if (!this.manualLogin) return this.confirmLogin(true);
+      this.transitioning = true;
+      try {
+        await this.interactive!.close();
+        await this.launch(false);
+        await this.waitForToken();
+        await this.validate();
+        await this.session.saveSession(this.context!);
+        this.guard?.confirmInteractiveLogin();
+        this.manualLogin = false;
+      } catch {
+        await this.closeAutomation();
+        if (!this.interactive!.running) await this.interactive!.start();
+        throw new UpstreamError('Qwen login is required. Conclua o acesso no Qwen e clique em Concluir login novamente.', 401);
+      } finally { this.transitioning = false; }
+    });
+  }
+  /** The chat frontend sends its stored bearer token with its first API calls after loading. */
+  private async waitForToken(timeout = 20_000): Promise<void> {
+    const deadline = Date.now() + timeout;
+    while (!this.token && Date.now() < deadline) await delay(250);
   }
   private async navigate(url: string): Promise<void> {
     if (!this.page) throw new Error('Qwen browser is not initialized.');
@@ -113,12 +168,15 @@ export class QwenProvider implements ProviderAdapter {
     this.state = 'authenticated'; this.checkedAt = new Date().toISOString();
   }
   async confirmLogin(interactive = false): Promise<void> {
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('Qwen login is required. Clique em Concluir login.', 401);
     await this.validate();
     if (!this.context) throw new Error('Qwen browser is not initialized.');
     await this.session.saveSession(this.context);
     if (interactive) this.guard?.confirmInteractiveLogin();
   }
   async status(): Promise<ProviderStatus> {
+    if (this.manualLogin || this.transitioning) return { state: 'login_required', checkedAt: this.checkedAt,
+      sessionSaved: await this.session.hasSavedSession(), confirmationRequired: true };
     if (this.page && !this.guard?.status().block && !this.guard?.status().busy && (!this.checkedAt || Date.now() - Date.parse(this.checkedAt) > 15_000)) {
       try { await this.validate(); }
       catch (error) { this.state = error instanceof UpstreamError && error.status === 401 ? 'login_required' : 'unavailable'; this.checkedAt = new Date().toISOString(); }
@@ -127,6 +185,7 @@ export class QwenProvider implements ProviderAdapter {
       ...(this.guard?.status() ?? {}), profileInUse: !this.page && await this.session.isProfileInUse() };
   }
   async models(): Promise<ProviderModel[]> {
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('Qwen login is required.', 401);
     this.guard?.assertAllowed();
     if (this.state === 'authenticated' && this.catalog && Date.now() - this.catalog.checkedAt < 300_000) return this.catalog.models;
     await this.validate();
@@ -137,6 +196,7 @@ export class QwenProvider implements ProviderAdapter {
   async generate(prompt: string, model: string, thinking: boolean, signal?: AbortSignal): Promise<AsyncIterable<ProviderEvent>> {
     signal?.throwIfAborted();
     if (!model.startsWith('qwen/') || !model.slice(5)) throw new UpstreamError('Invalid Qwen model ID.', 400);
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('Qwen login is required.', 401);
     if (!this.guard) throw new Error('Qwen browser is not initialized.');
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
@@ -172,10 +232,15 @@ export class QwenProvider implements ProviderAdapter {
       })();
     } catch (error) { await cleanup(); throw error; }
   }
-  async close(): Promise<void> {
+  private async closeAutomation(): Promise<void> {
     for (const controller of this.active) controller.abort();
     const context = this.context; this.context = null; this.page = null; this.token = null; this.catalog = undefined;
     try { await context?.close(); }
     finally { const unlock = this.unlock; this.unlock = undefined; await unlock?.(); this.initialization = undefined; this.state = 'not_initialized'; }
+  }
+  async close(): Promise<void> {
+    return this.loginMutex.withLock(async () => {
+      await this.interactive?.close(); this.manualLogin = false; await this.closeAutomation();
+    });
   }
 }
