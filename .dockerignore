@@ -10,6 +10,7 @@ ernie_profile
 gemini_profile
 copilot_profile
 kimi_profile
+mistral_profile
 .cache
 *.pem
 *.key
