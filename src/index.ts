@@ -34,7 +34,7 @@ function modelEntry(model: ProviderModel) {
     context_length: dynamicLimit,
     max_context_tokens: dynamicLimit,
     max_input_tokens: dynamicLimit,
-    ...(getProvider().id === 'chatgpt' && model.maxOutputTokens === undefined ? {} : { max_output_tokens: model.maxOutputTokens ?? 8_000 }),
+    ...((getProvider().id === 'chatgpt' || getProvider().id === 'gemini') && model.maxOutputTokens === undefined ? {} : { max_output_tokens: model.maxOutputTokens ?? 8_000 }),
     context_limit_source: dynamicLimit > 0 ? 'configured_or_estimated' : 'unknown',
   };
 }

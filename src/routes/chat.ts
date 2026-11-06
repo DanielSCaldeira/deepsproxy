@@ -260,6 +260,10 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
       !(Array.isArray(m?.content) && (m.content as any[]).every(p => p?.type === 'text' && typeof p.text === 'string'))))
       return c.json({error:{message:'ChatGPT web aceita somente mensagens de texto.',code:'invalid_request_error'}},400);
     if (provider.id === 'chatgpt' && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:'Controle de reasoning_effort indisponível no ChatGPT web.',code:'invalid_request_error'}},400);
+    if (provider.id === 'gemini' && body.messages.some(m => m?.content !== null && typeof m?.content !== 'string' &&
+      !(Array.isArray(m?.content) && (m.content as any[]).every(p => p?.type === 'text' && typeof p.text === 'string'))))
+      return c.json({error:{message:'Gemini web aceita somente mensagens de texto.',code:'invalid_request_error'}},400);
+    if (provider.id === 'gemini' && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:'Controle de reasoning_effort indisponível no Gemini web.',code:'invalid_request_error'}},400);
     const spec = models.find(model => model.id === body.model)!;
     if (provider.id !== 'deepseek' && spec.contextLength > 0) getModelTelemetry(body.model).detectedLimit = Math.min(getModelTelemetry(body.model).detectedLimit, spec.contextLength * 3.5);
     getGenerationGuard().assertAllowed();

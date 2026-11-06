@@ -16,10 +16,11 @@ export function upstreamMessage(body: string): string | null {
 export function apiError(error: unknown, code: string) {
   const qwen = process.env.PROVIDER === 'qwen';
   const chatgpt = process.env.PROVIDER === 'chatgpt';
-  const service = chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
-  const chatUrl = chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
+  const gemini = process.env.PROVIDER === 'gemini';
+  const service = gemini ? 'Gemini' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
+  const chatUrl = gemini ? 'https://gemini.google.com/app' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
   const originalCode = code;
-  const kind = code.replace(/^(deepseek|qwen|chatgpt)_/, '');
+  const kind = code.replace(/^(deepseek|qwen|chatgpt|gemini)_/, '');
   const technical = error instanceof Error ? error.message : String(error);
   const guard = getGenerationGuard().status();
   const stored = ['account_suspended', 'login_required'].includes(kind) ? guard.block?.originalMessage : null;
@@ -49,6 +50,8 @@ export function apiError(error: unknown, code: string) {
   } else {
     action = `Verifique a conexão e a disponibilidade do serviço ${service}. Aguarde antes de tentar novamente; se persistir, consulte os logs do proxy com a mensagem de erro abaixo.`;
   }
+  // Gemini uses Google sign-in itself; it is completed manually in the remote browser.
+  if (gemini) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com a conta Google (senha, verificação em duas etapas e confirmação de dispositivo, quando solicitadas)').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   if (chatgpt) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   return { error: {
     // Many OpenAI-compatible clients display only message, so it must stand alone.
