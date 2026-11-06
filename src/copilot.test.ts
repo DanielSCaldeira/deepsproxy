@@ -39,6 +39,11 @@ test('Copilot catalog, routing, login evidence and service errors', () => {
   assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com' }), 'authenticated', 'signed-in chat app at copilot.com/chat');
   assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com', tier: 'guest' }), 'login_required');
   assert.equal(copilotLoginState({ ...base, origin: 'https://login.live.com' }), 'login_required');
+  // Microsoft 365 Copilot app at copilot.com/chat: its editor only renders for a signed-in account.
+  const m365 = { origin: 'https://copilot.com', anonymous: false, composer: false, userStatus: null, tier: null, m365: true };
+  assert.equal(copilotLoginState(m365), 'authenticated');
+  assert.equal(copilotLoginState({ ...m365, origin: 'https://login.microsoftonline.com' }), 'login_required');
+  assert.equal(copilotLoginState({ ...m365, m365: false }), 'login_required');
   assert.equal(copilotLoginState({ ...base, userStatus: 401, tier: null }), 'login_required');
   assert.equal(copilotLoginState({ ...base, userStatus: null, tier: null }), 'pending');
   assert.equal(copilotError('sign-in-required').status, 401);
@@ -286,6 +291,39 @@ test('Copilot browser capture claims only the matching send frame and blocks a m
     assert.deepEqual(result, { afterOther: false, claimed: true, error: 'mode_mismatch', done: true });
     assert.deepEqual(received.map(frame => frame.conversationId ?? frame.event), ['setOptions', 'c0'], 'mismatched mode is never dispatched');
   } finally { await browser.close(); }
+});
+
+test('Copilot region block falls back to the Microsoft 365 Copilot app for login', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'copilot-m365-'));
+  const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
+  const browser = await chromium.launch();
+  const provider = new CopilotProvider();
+  try {
+    const launch = async () => {
+      const context = await browser.newContext();
+      // Observed 2026-11-06 for a signed-in account: the consumer app shows a region block.
+      await context.route('https://copilot.microsoft.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1 data-testid="region-block-title">Indisponível na sua região</h1>' }));
+      await context.route('https://copilot.com/**', route => route.fulfill({ contentType: 'text/html',
+        body: '<main><span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" aria-label="Enviar uma mensagem para o Copilot"></span></main>' }));
+      const page = await context.newPage();
+      Object.assign(provider, { context, page });
+      await (provider as any).navigate(); // the real launch ends by opening the chat
+    };
+    let humanRunning = true;
+    const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; }, start: async () => { humanRunning = true; } };
+    Object.assign(provider, { manualLogin: true, interactive: fake, launch });
+    await provider.finishLogin();
+    const status = await provider.status();
+    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true);
+    assert.equal(new URL(provider.getActivePage()!.url()).origin, 'https://copilot.com');
+    // Sending through the Microsoft 365 app is not built yet: the error says so instead of waiting.
+    await assert.rejects(async () => collect(await provider.generate('Teste', 'copilot/auto', false)),
+      (error: any) => error.status === 503 && /Microsoft 365 Copilot/.test(error.message));
+  } finally {
+    await provider.close(); await browser.close();
+    if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('Copilot early manual confirmation reopens login and successful confirmation saves the same profile', async () => {

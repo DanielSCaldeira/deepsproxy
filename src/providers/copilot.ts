@@ -15,6 +15,12 @@ export const COPILOT_ORIGIN = 'https://copilot.microsoft.com';
 export const COPILOT_CHAT_URL = COPILOT_ORIGIN + '/chats/new';
 // After sign-in a cookie redirects `/chats/new` to the same chat app at copilot.com/chat (2026-11-06).
 const COPILOT_APP_ORIGINS = [COPILOT_ORIGIN, 'https://copilot.com', 'https://www.copilot.com'];
+// Observed 2026-11-06: for a signed-in Microsoft account, copilot.microsoft.com showed a region block
+// and Microsoft served the Microsoft 365 Copilot app at copilot.com/chat with the same session
+// (redirect chain through login.microsoftonline.com and login.live.com). It is also the login entry:
+// signed-in accounts land on the chat, others get the Microsoft sign-in (Microsoft, Google or Apple).
+export const COPILOT_M365_URL = 'https://copilot.com/chat';
+const COPILOT_M365_ORIGIN = 'https://copilot.com';
 // Selectors from the public frontend bundle (data-testid rendered from `testId`).
 export const COPILOT_SELECTORS = {
   editor: '[data-testid="composer-input"]:visible',
@@ -22,14 +28,19 @@ export const COPILOT_SELECTORS = {
   stop: '[data-testid="stop-button"]',
   modeMenu: '#composer-dropdown-button-menu-contents',
   anonymous: '[data-testid="anonymous-block-page-title"], [data-testid="sign-in-exp-chat-header-button"], [data-testid="sign-in-exp-landing-header-button"]',
+  regionBlock: '[data-testid="region-block-title"]',
+  // Microsoft 365 Copilot app (copilot.com/chat): contenteditable span, rendered only when signed in.
+  m365Editor: '#m365-chat-editor-target-element[role="textbox"]',
 } as const;
 const modeButton = (mode: string) => `[data-testid="composer-chat-mode-${mode}-button"]`;
 const MODE_TRIGGER = `button:is(${COPILOT_MODES.map(modeButton).join(',')}):not([role="menuitem"])`;
 
-export type CopilotPageProbe = { origin: string; anonymous: boolean; composer: boolean; userStatus: number | null; tier: string | null };
+export type CopilotPageProbe = { origin: string; anonymous: boolean; composer: boolean; userStatus: number | null; tier: string | null; m365?: boolean };
 /** Login evidence from the site itself: the anonymous block page, the composer and the
- * account tier the frontend received from `GET /c/api/user` (`guest` when anonymous). */
+ * account tier the frontend received from `GET /c/api/user` (`guest` when anonymous).
+ * The Microsoft 365 Copilot app renders its editor only for a signed-in account. */
 export function copilotLoginState(probe: CopilotPageProbe): 'authenticated' | 'login_required' | 'pending' {
+  if (probe.m365 && probe.origin === COPILOT_M365_ORIGIN) return 'authenticated';
   if (!COPILOT_APP_ORIGINS.includes(probe.origin) || probe.anonymous) return 'login_required';
   // copilot.com also serves the marketing page; only its chat app (with the composer) counts.
   if (probe.origin !== COPILOT_ORIGIN && !probe.composer) return 'login_required';
@@ -43,6 +54,7 @@ export class CopilotProvider implements ProviderAdapter {
   readonly id = 'copilot' as const;
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private m365App = false;
   private initialization?: Promise<void>;
   private unlock?: () => Promise<void>;
   private readonly directory = getProfileDirectory();
@@ -94,6 +106,18 @@ export class CopilotProvider implements ProviderAdapter {
     if (!this.page) throw new UpstreamError('Copilot browser unavailable.', 503);
     await pauseBeforeProviderAction('open-chat');
     await this.page.goto(COPILOT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    // Wait for the consumer app to show what it is serving this account.
+    const consumer = [COPILOT_SELECTORS.editor.replace(':visible', ''), COPILOT_SELECTORS.anonymous, COPILOT_SELECTORS.regionBlock].join(', ');
+    await this.page.locator(consumer).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    const blocked = await this.page.locator(COPILOT_SELECTORS.regionBlock).first().isVisible().catch(() => false);
+    if (blocked || new URL(this.page.url()).origin === COPILOT_M365_ORIGIN) await this.openM365();
+  }
+  /** Microsoft 365 Copilot app: the Microsoft account session passes through the Microsoft sign-in redirects. */
+  private async openM365(): Promise<void> {
+    const page = this.page!;
+    await page.goto(COPILOT_M365_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForURL(url => url.origin === COPILOT_M365_ORIGIN && url.pathname.startsWith('/chat'), { timeout: 30_000 }).catch(() => {});
+    await page.locator(COPILOT_SELECTORS.m365Editor).first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
   }
   getActivePage() { return this.page; }
   isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }
@@ -107,20 +131,21 @@ export class CopilotProvider implements ProviderAdapter {
       this.transitioning = true;
       try {
         await this.closeAutomation();
-        this.interactive ??= new InteractiveBrowser(this.directory, COPILOT_CHAT_URL);
+        this.interactive ??= new InteractiveBrowser(this.directory, COPILOT_M365_URL);
         await this.interactive.start(); this.manualLogin = true;
       } finally { this.transitioning = false; }
     });
   }
   private async probe(): Promise<CopilotPageProbe> {
     // No named helpers inside serialized browser code: tsx (keepNames) would inject `__name`.
-    return this.page!.evaluate(({ anonymous, editor }) => {
+    return this.page!.evaluate(({ anonymous, editor, m365Editor }) => {
       const user = (globalThis as any).__proxyCopilotUser;
       return { origin: location.origin,
         anonymous: Array.from(document.querySelectorAll(anonymous)).some(e => e.getClientRects().length > 0),
         composer: Array.from(document.querySelectorAll(editor.replace(':visible', ''))).some(e => e.getClientRects().length > 0),
-        userStatus: typeof user?.status === 'number' ? user.status : null, tier: typeof user?.tier === 'string' ? user.tier : null };
-    }, { anonymous: COPILOT_SELECTORS.anonymous, editor: COPILOT_SELECTORS.editor });
+        userStatus: typeof user?.status === 'number' ? user.status : null, tier: typeof user?.tier === 'string' ? user.tier : null,
+        m365: Array.from(document.querySelectorAll(m365Editor)).some(e => e.getClientRects().length > 0) };
+    }, { anonymous: COPILOT_SELECTORS.anonymous, editor: COPILOT_SELECTORS.editor, m365Editor: COPILOT_SELECTORS.m365Editor });
   }
   /** `waitMs` 0 inspects the current page once (status polling); otherwise waits for hydration. */
   private async validate(waitMs = 30_000): Promise<void> {
@@ -139,6 +164,7 @@ export class CopilotProvider implements ProviderAdapter {
       await delay(500);
     }
     this.checkedAt = new Date().toISOString();
+    this.m365App = result === 'authenticated' && probe.m365 === true;
     if (result === 'pending') {
       // A composer without an anonymous block but no observed tier: the frontend did
       // not query the account. Keep the last known state for a single status probe.
@@ -293,6 +319,8 @@ export class CopilotProvider implements ProviderAdapter {
         controller.signal.throwIfAborted();
         interaction = 'opening chat'; await this.navigate();
         interaction = 'authentication'; await this.validate();
+        // Sending through the Microsoft 365 Copilot app (SignalR Chathub on substrate.office.com) is not built yet.
+        if (this.m365App) throw new UpstreamError('Copilot: o envio pelo app Microsoft 365 Copilot (copilot.com) ainda não está disponível no proxy.', 503);
         const editor = page!.locator(COPILOT_SELECTORS.editor).first();
         interaction = 'waiting for editor';
         await editor.waitFor({ state: 'visible', timeout: 30_000 });
