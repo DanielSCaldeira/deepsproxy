@@ -124,8 +124,8 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
   await t.test('two users have three isolated providers; one key routes all and Qwen disconnect preserves DeepSeek',async()=> {
     const aliceAccounts=(await (await request('/api/me/accounts','GET',undefined,alice)).json()).accounts;
     const bobAccounts=(await (await request('/api/me/accounts','GET',undefined,bob)).json()).accounts;
-    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['chatgpt','claude','deepseek','perplexity','qwen']);
-    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,10);
+    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['chatgpt','claude','cohere','copilot','deepseek','ernie','gemini','grok','kimi','meta','mistral','perplexity','quillbot','qwen']);
+    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,28);
     const aliceChatGPT=aliceAccounts.find((a:any)=>a.provider==='chatgpt');
     assert.equal(aliceChatGPT.name,'ChatGPT'); assert.equal(aliceChatGPT.manualLoginConfirmation,true);
     workers.chatgptAccounts.add(aliceChatGPT.id);
@@ -164,6 +164,7 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     const ernie=await request('/v1/chat/completions','POST',{model:'ernie/smartMode',messages:[]},{},{Authorization:'Bearer '+aliceKey});
     assert.equal(ernie.status,200); await ernie.text();
     assert.equal(workers.calls.at(-1)!.id,aliceErnie.id);
+    await workers.stopAccount(aliceErnie.id);
     const aliceGemini=aliceAccounts.find((a:any)=>a.provider==='gemini');
     assert.equal(aliceGemini.name,'Gemini'); assert.equal(aliceGemini.manualLoginConfirmation,true);
     workers.geminiAccounts.add(aliceGemini.id);
@@ -171,6 +172,7 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     const gemini=await request('/v1/chat/completions','POST',{model:'gemini/auto',messages:[]},{},{Authorization:'Bearer '+aliceKey});
     assert.equal(gemini.status,200); await gemini.text();
     assert.equal(workers.calls.at(-1)!.id,aliceGemini.id);
+    await workers.stopAccount(aliceGemini.id);
     const aliceCopilot=aliceAccounts.find((a:any)=>a.provider==='copilot');
     assert.equal(aliceCopilot.name,'Copilot'); assert.equal(aliceCopilot.manualLoginConfirmation,true);
     workers.copilotAccounts.add(aliceCopilot.id);
@@ -181,6 +183,16 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     await workers.stopAccount(aliceCopilot.id); // Keep the fixture within MAX_ACTIVE_BROWSERS.
     const aliceKimi=aliceAccounts.find((a:any)=>a.provider==='kimi');
     assert.equal(aliceKimi.name,'Kimi'); assert.equal(aliceKimi.manualLoginConfirmation,true);
+    const aliceMistral=aliceAccounts.find((a:any)=>a.provider==='mistral');
+    assert.equal(aliceMistral.name,'Mistral'); assert.equal(aliceMistral.manualLoginConfirmation,true); assert.notEqual(aliceMistral.id,aliceId);
+    const aliceQuillBot=aliceAccounts.find((a:any)=>a.provider==='quillbot');
+    assert.equal(aliceQuillBot.name,'QuillBot'); assert.equal(aliceQuillBot.manualLoginConfirmation,true);
+    workers.quillbotAccounts.add(aliceQuillBot.id);
+    await workers.ensure(aliceQuillBot.id); await workers.status(aliceQuillBot.id);
+    const quillbot=await request('/v1/chat/completions','POST',{model:'quillbot/chat',messages:[]},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(quillbot.status,200); await quillbot.text();
+    assert.equal(workers.calls.at(-1)!.id,aliceQuillBot.id);
+    await workers.stopAccount(aliceQuillBot.id);
     const aliceMeta=aliceAccounts.find((a:any)=>a.provider==='meta');
     assert.equal(aliceMeta.name,'Meta AI'); assert.equal(aliceMeta.manualLoginConfirmation,true);
     workers.metaAccounts.add(aliceMeta.id);
@@ -196,6 +208,7 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     const grok=await request('/v1/chat/completions','POST',{model:'grok/auto',messages:[]},{},{Authorization:'Bearer '+aliceKey});
     assert.equal(grok.status,200); await grok.text();
     assert.equal(workers.calls.at(-1)!.id,aliceGrok.id);
+    await workers.stopAccount(aliceGrok.id);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);

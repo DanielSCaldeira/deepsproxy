@@ -26,7 +26,7 @@ const log = createLogger('chat');
 const WEB_PROVIDER_NAMES: Record<string, string> = { chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', copilot: 'Copilot', mistral: 'Mistral', grok: 'Grok', meta: 'Meta AI', cohere: 'Cohere', perplexity: 'Perplexity', kimi: 'Kimi', quillbot: 'QuillBot', ernie: 'Ernie' };
 const webProviderName = (id: string) => WEB_PROVIDER_NAMES[id] ?? id;
 // Web providers that accept only text messages and have no reasoning_effort control.
-const textOnlyWebProviders = new Set<string>(['chatgpt', 'claude', 'perplexity']);
+const textOnlyWebProviders = new Set<string>(['chatgpt', 'claude', 'gemini', 'copilot', 'mistral', 'grok', 'meta', 'cohere', 'perplexity', 'kimi', 'quillbot', 'ernie']);
 
 function maxAttempts() {
   const value = Number(process.env.DEEPSPROXY_MAX_ATTEMPTS ?? '1');
@@ -263,6 +263,7 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
     if (textOnlyWebProviders.has(provider.id) && body.messages.some(m => m?.content !== null && typeof m?.content !== 'string' &&
       !(Array.isArray(m?.content) && (m.content as any[]).every(p => p?.type === 'text' && typeof p.text === 'string'))))
       return c.json({error:{message:`${webProviderName(provider.id)} web aceita somente mensagens de texto.`,code:'invalid_request_error'}},400);
+    if (provider.id === 'mistral' && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:'Use o modelo mistral/think; reasoning_effort não é controlável no Mistral web.',code:'invalid_request_error'}},400);
     if (textOnlyWebProviders.has(provider.id) && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:`Controle de reasoning_effort indisponível no ${webProviderName(provider.id)} web.`,code:'invalid_request_error'}},400);
     const spec = models.find(model => model.id === body.model)!;
     if (provider.id !== 'deepseek' && spec.contextLength > 0) getModelTelemetry(body.model).detectedLimit = Math.min(getModelTelemetry(body.model).detectedLimit, spec.contextLength * 3.5);
