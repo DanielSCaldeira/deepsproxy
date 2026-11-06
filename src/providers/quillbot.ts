@@ -14,8 +14,6 @@ export const QUILLBOT_ORIGIN = 'https://quillbot.com';
 export const QUILLBOT_CHAT_URL = QUILLBOT_ORIGIN + '/ai-chat';
 // Login route referenced by the site's auth bundle; returnUrl brings the human back to the chat.
 export const QUILLBOT_LOGIN_URL = QUILLBOT_ORIGIN + '/login?returnUrl=/ai-chat';
-// How long after a page load a logged-in profile may still look like a visitor to user-cache.
-const QUILLBOT_SESSION_RESTORE_MS = 25_000;
 // Composer elements observed on the public pages (2026-11-06). /ai-chat renders
 // the legacy composer; /ai-chat/c/... renders the "unified" one, whose send
 // button stays disabled until the textarea has text and becomes a stop button.
@@ -43,7 +41,6 @@ export class QuillBotProvider implements ProviderAdapter {
   private state: ProviderStatus['state'] = 'not_initialized';
   private message: string | null = null;
   private quotaExhausted = false;
-  private loadedAt = 0;
   private active = new Set<AbortController>();
 
   initialize(headless = true): Promise<void> {
@@ -81,7 +78,6 @@ export class QuillBotProvider implements ProviderAdapter {
     if (!this.page) throw new UpstreamError('QuillBot browser unavailable.', 503);
     await pauseBeforeProviderAction('open-chat');
     await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    this.loadedAt = Date.now();
   }
   getActivePage() { return this.page; }
   isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }
@@ -103,15 +99,7 @@ export class QuillBotProvider implements ProviderAdapter {
   }
   private async validate(): Promise<void> {
     if (!this.page || new URL(this.page.url()).origin !== QUILLBOT_ORIGIN) throw new UpstreamError('QuillBot login is required.', 401);
-    let result = await this.page.evaluate(quillBotAuthProbe);
-    // After a page load the site restores the Firebase login and only then issues its server
-    // session (securetoken refresh, then POST /api/auth/issue-token, ~3 s in the live worker).
-    // Until then user-cache answers 403 as for a visitor, although the login cookie is present.
-    while (result.cookie && !result.challenge && (result.status === 401 || result.status === 403)
-      && Date.now() - this.loadedAt < QUILLBOT_SESSION_RESTORE_MS) {
-      await delay(1500);
-      result = await this.page.evaluate(quillBotAuthProbe);
-    }
+    const result = await this.page.evaluate(quillBotAuthProbe);
     this.checkedAt = new Date().toISOString();
     if (result.challenge) {
       this.state = 'unavailable'; this.message = 'Verificação do site pendente no navegador.';
@@ -121,7 +109,9 @@ export class QuillBotProvider implements ProviderAdapter {
     if (result.status !== 200 && result.status !== 401 && result.status !== 403) {
       this.state = 'unavailable'; throw quillBotError(result.status || 503);
     }
-    this.authenticated = result.cookie && result.status === 200;
+    // A free account gets 403 from user-cache just like a visitor (live worker, 2026-11-06),
+    // so the site's stored Firebase user is the login signal; 200 still counts (paid plans).
+    this.authenticated = result.cookie && (result.firebaseUser || result.status === 200);
     if (!this.authenticated) {
       this.state = 'login_required'; this.message = null;
       throw new UpstreamError('QuillBot login is required; complete login in the browser.', 401);

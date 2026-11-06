@@ -77,6 +77,8 @@ export function installQuillBotCapture(): void {
 export interface QuillBotAuthProbe {
   challenge: boolean;
   cookie: boolean;
+  /** The site's stored Firebase user is a real (non-anonymous) account with a refresh token. */
+  firebaseUser: boolean;
   status: number;
   remaining: number | null;
 }
@@ -84,12 +86,36 @@ export interface QuillBotAuthProbe {
 /**
  * Runs inside the page. `authenticated` is the site's own client cookie and
  * `/api/auth/user-cache` answered 403 COM_FORBIDDEN for a visitor during the
- * public inspection. The freemium limit is read only as numbers.
+ * public inspection, and also for a signed-in free account in the live worker.
+ * The site signs in with Firebase and keeps the user in IndexedDB; only booleans
+ * leave the page (no e-mail or token). The freemium limit is read only as numbers.
  */
 export async function quillBotAuthProbe(): Promise<QuillBotAuthProbe> {
   // Cloudflare's interstitial observed for headless Chromium ("Just a moment...").
   const challenge = /^(Just a moment|Um momento)/i.test(document.title.trim());
   const cookie = /(?:^|;\s*)authenticated=true(?:;|$)/.test(document.cookie);
+  const firebaseUser = await (async () => {
+    const name = 'firebaseLocalStorageDb';
+    // Opening a missing database would create an empty one under the site's name.
+    try { if (!(await indexedDB.databases()).some(database => database.name === name)) return false; } catch { return false; }
+    return new Promise<boolean>(resolve => {
+      const open = indexedDB.open(name);
+      open.onupgradeneeded = () => open.transaction?.abort();
+      open.onerror = () => resolve(false);
+      open.onsuccess = () => {
+        const database = open.result;
+        try {
+          const all = database.transaction('firebaseLocalStorage', 'readonly').objectStore('firebaseLocalStorage').getAll();
+          all.onsuccess = () => {
+            database.close();
+            resolve(all.result.some((entry: any) => String(entry?.fbase_key).startsWith('firebase:authUser:')
+              && entry?.value?.isAnonymous === false && !!entry?.value?.stsTokenManager?.refreshToken));
+          };
+          all.onerror = () => { database.close(); resolve(false); };
+        } catch { database.close(); resolve(false); }
+      };
+    });
+  })();
   let status = 0, remaining: number | null = null;
   if (!challenge) {
     try {
@@ -102,5 +128,5 @@ export async function quillBotAuthProbe(): Promise<QuillBotAuthProbe> {
       if (typeof body?.data?.limit === 'number' && typeof body?.data?.remaining === 'number') remaining = body.data.remaining;
     } catch { remaining = null; }
   }
-  return { challenge, cookie, status, remaining };
+  return { challenge, cookie, firebaseUser, status, remaining };
 }

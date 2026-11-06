@@ -329,34 +329,43 @@ test('QuillBot early manual confirmation reopens login and successful confirmati
   }
 });
 
-test('QuillBot Concluir login waits for the site to restore the server session after the page load', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'quillbot-restore-'));
+test('QuillBot free account: user-cache 403 with a stored Firebase user is a login; an anonymous user is not', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'quillbot-firebase-'));
   const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
   const browser = await chromium.launch();
   const provider = new QuillBotProvider();
-  let humanRunning = true, reopened = 0, probes = 0;
+  let humanRunning = true, reopened = 0, anonymous = true;
   try {
     const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; },
       start: async () => { reopened++; humanRunning = true; } };
+    // The site's Firebase SDK keeps the signed-in user in IndexedDB; the fixture writes the same shape.
+    const store = (isAnonymous: boolean) => `<script>const o=indexedDB.open('firebaseLocalStorageDb',1);
+      o.onupgradeneeded=()=>o.result.createObjectStore('firebaseLocalStorage',{keyPath:'fbase_key'});
+      o.onsuccess=()=>{const t=o.result.transaction('firebaseLocalStorage','readwrite');
+        t.objectStore('firebaseLocalStorage').put({fbase_key:'firebase:authUser:fixture-key:[DEFAULT]',value:{isAnonymous:${isAnonymous},stsTokenManager:{refreshToken:'fixture'}}});
+        t.oncomplete=()=>{document.title='AI Chat';};};</script>`;
     const launch = async () => {
       const context = await browser.newContext();
       const page = await context.newPage();
       await page.route('https://quillbot.com/**', route => {
         const pathname = new URL(route.request().url()).pathname;
-        // Live worker: the first user-cache after the load is 403 until POST /api/auth/issue-token runs.
-        if (pathname === '/api/auth/user-cache') return route.fulfill(++probes > 2 ? { json: { data: {} } } : { status: 403, json: { code: 'COM_FORBIDDEN' } });
+        // Live worker: a signed-in free account and a visitor both get 403 here.
+        if (pathname === '/api/auth/user-cache') return route.fulfill({ status: 403, json: { code: 'COM_FORBIDDEN' } });
         if (pathname.startsWith('/api/')) return route.fulfill({ json: { data: { limit: 20, remaining: 20 } } });
-        return route.fulfill({ contentType: 'text/html', headers: { 'set-cookie': 'authenticated=true; Path=/' }, body: '<title>AI Chat</title><p>Chat</p>' });
+        return route.fulfill({ contentType: 'text/html', headers: { 'set-cookie': 'authenticated=true; Path=/' }, body: store(anonymous) + '<p>Chat</p>' });
       });
       await page.goto('https://quillbot.com/ai-chat');
-      Object.assign(provider, { context, page, loadedAt: Date.now() });
+      await page.waitForFunction(() => document.title === 'AI Chat');
+      Object.assign(provider, { context, page });
     };
     Object.assign(provider, { manualLogin: true, interactive: fake, launch });
+    await assert.rejects(() => provider.finishLogin(), /Conclua o acesso/);
+    assert.equal(reopened, 1, 'an anonymous Firebase user is not a login');
+    anonymous = false;
     await provider.finishLogin();
-    assert.equal(reopened, 0, 'a logged-in profile must not reopen the login window');
-    assert.ok(probes >= 3);
+    assert.equal(reopened, 1);
     const status = await provider.status();
-    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true);
+    assert.equal(status.state, 'authenticated'); assert.equal(status.authenticated, true); assert.equal(status.sessionSaved, true);
   } finally {
     await provider.close(); await browser.close();
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
