@@ -206,6 +206,15 @@ export class Workers {
     } finally { release(); }
   }
   async stopAccount(id: string) { this.cancel(id); await this.mutex.withLock(async () => { await this.provision('stop', id); this.workers.delete(id); }); }
+  // Frees an idle browser early, like the idle sweep: the saved session stays in the profile volume
+  // and the next request starts the browser again. Logins and queued calls keep their browser.
+  async release(id: string) {
+    return this.mutex.withLock(async () => {
+      if (!this.workers.has(id) || this.logins.has(id) || this.queue(id).active) return false;
+      await this.provision('stop', id); this.workers.delete(id);
+      return true;
+    });
+  }
   async stopUser(id: string) {
     const ids = this.db ? (await this.db.query('SELECT id FROM provider_accounts WHERE user_id=$1',[id])).rows.map(r => r.id) : [id];
     await Promise.all(ids.map(account => this.stopAccount(account)));

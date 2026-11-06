@@ -1,6 +1,7 @@
 const el = id => document.getElementById(id);
 let remoteProvider, disconnectedProvider, accountList = [];
 let csrf = '', me, mode = 'login', busy = false, refreshTask, rfb, RFB;
+let loginQueue, queueStepScheduled = false;
 const linkToken = new URLSearchParams(location.hash.slice(1)).get('token');
 if (linkToken) history.replaceState(null, '', '/');
 function notice(message = '') {
@@ -17,6 +18,7 @@ function showAuth() {
   for (const id of ['key-secret','link-value','audit']) el(id).textContent = '';
   for (const id of ['new-key','share-link']) el(id).hidden = true;
   el('keys').replaceChildren(); el('users').replaceChildren(); el('accounts').replaceChildren(); accountList = []; el('available-models').textContent = ''; remoteProvider = undefined;
+  loginQueue = undefined; renderQueue();
 }
 function hideRemote() { el('remote-panel').hidden = true; document.body.classList.remove('remote-open'); }
 function closeRemote() { disconnectedProvider = undefined; if (rfb) { const connection = rfb; rfb = undefined; connection.disconnect(); } hideRemote(); el('remote').replaceChildren(); }
@@ -32,6 +34,81 @@ function updateRemoteConfirmation() {
   el('remote-help').textContent = needsLoginConfirmation(account)
     ? 'Após entrar no ' + account.name + ' e ver o chat, clique em Concluir login nesta barra para validar e salvar sua sessão.'
     : 'Conclua a autenticação na tela remota. A tela fecha após a validação da sessão.';
+}
+// Sequential login: opens each service that is not logged in yet, one at a time. When the current
+// service has a saved session, its browser is released (capacity) and the next one opens.
+const loggedIn = account => account.accountState === 'authenticated' || account.accountState === 'rate_limited' || account.authenticated === true;
+const serviceName = provider => accountList.find(account => account.provider === provider)?.name || provider;
+function renderQueue() {
+  const current = loginQueue?.current;
+  el('queue-skip').hidden = !loginQueue; el('queue-stop').hidden = !loginQueue;
+  el('connect-pending').textContent = loginQueue ? 'Abrir login atual' : 'Conectar pendentes';
+  el('queue-status').hidden = !current;
+  if (current) el('queue-status').textContent = 'Login em sequência: ' + (loginQueue.total - loginQueue.pending.length) + ' de ' + loginQueue.total + ' — ' + serviceName(current) + '. Quando a sessão for salva, o próximo serviço abre sozinho.';
+}
+async function startQueue() {
+  if (loginQueue) { if (loginQueue.current) await remote(loginQueue.current); return; }
+  await refresh(true);
+  const pending = accountList.filter(account => !loggedIn(account) && account.accountState !== 'suspended').map(account => account.provider);
+  if (!pending.length) { notice('Todas as contas já estão conectadas.'); return; }
+  loginQueue = { pending, total: pending.length, done: [], skipped: [] };
+  await nextInQueue();
+}
+async function nextInQueue() {
+  while (loginQueue) {
+    const provider = loginQueue.pending.shift();
+    if (!provider) { finishQueue('Login em sequência concluído'); return; }
+    loginQueue.current = provider; loginQueue.openedAt = Date.now(); renderQueue();
+    try { await operation('connect', provider); renderQueue(); return; }
+    catch (error) {
+      if (/capacidade/i.test(error.message)) { loginQueue.pending.unshift(provider); loginQueue.current = undefined; finishQueue('Login em sequência pausado: capacidade de navegadores ocupada. Aguarde alguns minutos e clique em Conectar pendentes'); return; }
+      loginQueue.current = undefined; loginQueue.skipped.push(serviceName(provider) + ' (' + error.message + ')');
+    }
+  }
+}
+async function releaseBrowser(provider) {
+  try { await api('/api/me/accounts/' + provider + '/connection/sleep','POST',{}); } catch { /* The idle sweep frees it later. */ }
+}
+async function leaveCurrent(skip) {
+  const provider = loginQueue?.current;
+  if (!provider) return;
+  loginQueue.current = undefined;
+  if (skip) loginQueue.skipped.push(serviceName(provider)); else loginQueue.pending.unshift(provider);
+  await api('/api/me/accounts/' + provider + '/connection/cancel','POST',{});
+  closeRemote(); remoteProvider = undefined;
+  await releaseBrowser(provider);
+}
+function finishQueue(title) {
+  const queue = loginQueue; loginQueue = undefined; renderQueue();
+  if (!queue) return;
+  const parts = [queue.done.length + ' conectado(s)' + (queue.done.length ? ' (' + queue.done.join(', ') + ')' : '')];
+  if (queue.skipped.length) parts.push('pulado(s): ' + queue.skipped.join(', '));
+  if (queue.pending.length) parts.push('não aberto(s): ' + queue.pending.map(serviceName).join(', '));
+  notice(title + ' — ' + parts.join('; ') + '.');
+}
+// 'saved': the current service is logged in with a saved session; 'abandoned': its remote login ended without one.
+function queueStep() {
+  const account = accountList.find(account => account.provider === loginQueue?.current);
+  if (!account) return null;
+  if (!account.loginActive && loggedIn(account) && account.sessionSaved) return 'saved';
+  if (!account.loginActive && !loggedIn(account) && !rfb && Date.now() - loginQueue.openedAt > 60_000) return 'abandoned';
+  return null;
+}
+async function advanceQueue() {
+  const step = queueStep();
+  if (!step) return;
+  const provider = loginQueue.current, name = serviceName(provider);
+  loginQueue.current = undefined;
+  if (step === 'saved') loginQueue.done.push(name); else loginQueue.skipped.push(name + ' (login não concluído)');
+  if (remoteProvider === provider) { closeRemote(); remoteProvider = undefined; }
+  await releaseBrowser(provider);
+  await nextInQueue();
+}
+function scheduleQueue() {
+  if (!loginQueue || queueStepScheduled || !queueStep()) return;
+  queueStepScheduled = true;
+  const run = () => { if (busy) { setTimeout(run, 500); return; } queueStepScheduled = false; if (queueStep()) void guarded(advanceQueue); };
+  setTimeout(run, 0);
 }
 async function guarded(run) { if (busy) return; busy = true; for (const b of document.querySelectorAll('button')) b.disabled = true; try { notice(); await run(); } catch (error) { notice(error.message); } finally { busy = false; for (const b of document.querySelectorAll('button')) b.disabled = false; } }
 async function signedIn() {
@@ -97,13 +174,14 @@ async function refreshAccounts() {
   try {
     const data = await api('/api/me/accounts');
     if (!me) return;
-    accountList = data.accounts; renderAccounts(accountList); updateRemoteConfirmation();
+    accountList = data.accounts; renderAccounts(accountList); updateRemoteConfirmation(); renderQueue();
     const selected = accountList.find(account => account.provider === (disconnectedProvider || remoteProvider));
     if (selected && !selected.loginActive && (rfb || disconnectedProvider === selected.provider)) {
       closeRemote();
       if (selected.accountState === 'authenticated') notice(selected.name + ' conectado. A tela de login foi fechada automaticamente. Seus modelos estão disponíveis.');
       else if (selected.accountState === 'suspended') notice(selected.authenticated ? 'Login do ' + selected.name + ' confirmado e sessão salva. A conta está bloqueada pelo provedor; os envios estão interrompidos.' : 'A conta do ' + selected.name + ' está bloqueada pelo provedor. Consulte o aviso no painel.');
     }
+    scheduleQueue();
   } catch (error) { notice(error.message); }
 }
 async function keys() {
@@ -171,7 +249,13 @@ el('remote-fit').onclick = () => {
   el('remote-fit').textContent = rfb.scaleViewport ? 'Tamanho real (100%)' : 'Ajustar à tela';
   el('remote-fit').setAttribute('aria-pressed', String(rfb.scaleViewport));
 };
-el('remote-close').onclick = () => guarded(async () => { if (remoteProvider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{}); closeRemote(); remoteProvider = undefined; await refresh(); });
+el('remote-close').onclick = () => guarded(async () => {
+  if (loginQueue) { await leaveCurrent(false); finishQueue('Login em sequência interrompido'); await refresh(); return; }
+  if (remoteProvider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{}); closeRemote(); remoteProvider = undefined; await refresh();
+});
+el('connect-pending').onclick = () => guarded(startQueue);
+el('queue-skip').onclick = () => guarded(async () => { await leaveCurrent(true); await nextInQueue(); });
+el('queue-stop').onclick = () => guarded(async () => { await leaveCurrent(false); finishQueue('Login em sequência interrompido'); await refresh(); });
 el('remote-finish').onclick = () => guarded(async () => { if (remoteProvider) await operation('finish', remoteProvider); });
 el('remote-retry').onclick = () => guarded(async () => { const provider = remoteProvider; if (!provider) return; await api('/api/me/accounts/' + provider + '/connection/cancel','POST',{}); closeRemote(); await operation('connect', provider); });
 el('key-form').onsubmit = event => { event.preventDefault(); void guarded(async () => { const data = await api('/api/me/keys','POST',{name:el('key-name').value}); el('key-secret').textContent=data.key; el('new-key').hidden=false; el('key-name').value=''; await keys(); }); };
@@ -188,3 +272,5 @@ async function init() {
 }
 void init().catch(error => notice(error.message));
 setInterval(()=>void refresh(),15000);
+// While a sequential login runs, notice the saved session sooner so the next service opens quickly.
+setInterval(()=>{ if (loginQueue) void refresh(); },4000);

@@ -146,9 +146,11 @@ export function createGateway(db: Database, workers: Workers, config: Production
   });
   app.on('POST', ['/api/me/connection/:action','/api/me/accounts/:provider/connection/:action'], async c => {
     const action = c.req.param('action') || '', who = c.get('identity'), account = await accountFor(c);
-    if (!['connect','cancel','recover','disconnect','finish'].includes(action)) throw new HttpError(404, 'Ação inválida.');
+    if (!['connect','cancel','recover','disconnect','finish','sleep'].includes(action)) throw new HttpError(404, 'Ação inválida.');
     limits.take('operation:' + who.id, 15, 60_000);
     if (action === 'cancel') { workers.cancel(account.id, who.session); return c.json({ ok: true }); }
+    // The sequential login frees each browser after its session is saved, so the next service fits in capacity.
+    if (action === 'sleep') return c.json({ released: await workers.release(account.id) });
     if (action === 'finish') workers.remote(account.id, who.session);
     const running = await db.query("SELECT id FROM operations WHERE account_id=$1 AND status='running'", [account.id]);
     if (running.rows.length) throw new HttpError(409, 'Aguarde a operação atual.');

@@ -305,6 +305,17 @@ test('worker identities, account errors and capacity are explicit',async()=> {
   await workers.ensure(randomUUID()); await assert.rejects(workers.ensure(randomUUID()),(error:unknown)=>error instanceof HttpError && error.status===503);
 });
 
+test('release frees an idle browser early but keeps browsers with queued calls',async()=> {
+  const workers=new FakeWorkers({...config,maxWorkers:1}), first=randomUUID(), second=randomUUID();
+  await workers.ensure(first);
+  assert.equal(await workers.release(second),false,'an account without a browser has nothing to release');
+  const done=await workers.queue(first).acquire();
+  assert.equal(await workers.release(first),false,'a browser with a queued call stays');
+  done();
+  assert.equal(await workers.release(first),true);
+  await workers.ensure(second); // capacity was freed for the next account
+});
+
 test('idle browsers sleep with saved account status; expired login leases release the queue',async t=> {
   let now=Date.now(); t.mock.method(Date,'now',()=>now);
   const workers=new FakeWorkers(config), id=randomUUID();
