@@ -94,7 +94,7 @@ app.post('/:action/:id',async c=>mutex.withLock(async()=> {
   let owner: string;
   try { owner=uuid(body?.user_id); } catch { return c.json({error:'Invalid owner'},400); }
   const provider=body?.provider;
-  if (!['deepseek','qwen','chatgpt'].includes(provider) || body?.id!==id || (provider==='deepseek' && owner!==id) || (provider!=='deepseek' && owner===id)) return c.json({error:'Invalid account'},400);
+  if (!['deepseek','qwen','chatgpt','ernie'].includes(provider) || body?.id!==id || (provider==='deepseek' && owner!==id) || (provider!=='deepseek' && owner===id)) return c.json({error:'Invalid account'},400);
   const current=(await list()).find(w => (w.Labels?.[`${prefix}.account`] || w.Labels?.[`${prefix}.owner`])===id);
   if(current && (current.Labels[`${prefix}.owner`]!==owner || (current.Labels[`${prefix}.provider`] || 'deepseek')!==provider)) return c.json({error:'Account ownership mismatch'},409);
   if(action!=='start') { await stop(id,action==='purge'); return c.json({ok:true}); }
