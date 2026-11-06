@@ -10,7 +10,7 @@ import { digest, HttpError, workerToken } from './production/security.ts';
 import { classifySessionError } from './services/playwright.ts';
 import type { ProductionConfig } from './production/config.ts';
 
-const config: ProductionConfig = { origin:'https://proxy.test',database:'unused',bootstrap:'b'.repeat(64),provisioner:'http://internal',provisionerToken:'p'.repeat(64),workerMaster:'m'.repeat(64),maxWorkers:5 };
+const config: ProductionConfig = { origin:'https://proxy.test',database:'unused',bootstrap:'b'.repeat(64),provisioner:'http://internal',provisionerToken:'p'.repeat(64),workerMaster:'m'.repeat(64),maxWorkers:6 };
 class FakeWorkers extends Workers {
   calls: Array<{id:string;path:string}> = [];
   accounts = new Map<string,string>();
@@ -19,6 +19,7 @@ class FakeWorkers extends Workers {
   claudeAccounts = new Set<string>();
   perplexityAccounts = new Set<string>();
   cohereAccounts = new Set<string>();
+  ernieAccounts = new Set<string>();
   requestSignals = new Map<string, AbortSignal>();
   override async provision(action:string,id?:string) { return action==='list'?{workers:[]}:{host:`worker-${id}`}; }
   override async request(id:string,path:string,init:RequestInit={},start=true) {
@@ -30,7 +31,7 @@ class FakeWorkers extends Workers {
       const body=JSON.parse(String(init.body));
       return body.stream ? new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}) : Response.json({choices:[{message:{content:'ok'}}]});
     }
-    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.claudeAccounts.has(id)?'claude/auto':this.perplexityAccounts.has(id)?'perplexity/auto':this.cohereAccounts.has(id)?'cohere/auto':this.chatgptAccounts.has(id)?'chatgpt/auto':this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
+    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.claudeAccounts.has(id)?'claude/auto':this.perplexityAccounts.has(id)?'perplexity/auto':this.cohereAccounts.has(id)?'cohere/auto':this.ernieAccounts.has(id)?'ernie/smartMode':this.chatgptAccounts.has(id)?'chatgpt/auto':this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
     return Response.json({ok:true});
   }
 }
@@ -151,6 +152,13 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.equal(cohere.status,200); await cohere.text();
     assert.equal(workers.calls.at(-1)!.id,aliceCohere.id);
     await workers.stopAccount(aliceCohere.id); // Keep the shared capacity fixture unchanged.
+    const aliceErnie=aliceAccounts.find((a:any)=>a.provider==='ernie');
+    assert.equal(aliceErnie.name,'Ernie'); assert.equal(aliceErnie.manualLoginConfirmation,true);
+    workers.ernieAccounts.add(aliceErnie.id);
+    await workers.ensure(aliceErnie.id); await workers.status(aliceErnie.id);
+    const ernie=await request('/v1/chat/completions','POST',{model:'ernie/smartMode',messages:[]},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(ernie.status,200); await ernie.text();
+    assert.equal(workers.calls.at(-1)!.id,aliceErnie.id);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);

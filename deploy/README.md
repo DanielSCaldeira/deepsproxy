@@ -382,3 +382,18 @@ remoto (login por e-mail, Google ou GitHub); após entrar, clique em
 egress são `dashboard.cohere.com`, `production.api.os.cohere.com` e
 `api.cohere.com`. Veja [o registro da integração](../docs/cohere-integration.md):
 o envio real com conta ainda não foi validado.
+
+## Conta Ernie (文心助手)
+
+A migração 6 adiciona uma conta `ernie` por usuário, preservando as contas e
+chaves existentes. O worker recebe `PROVIDER=ernie` e `PROVIDER_PROFILE_DIR=/profile`.
+O card Ernie abre `https://wenxin.baidu.com/` no navegador remoto: clique em
+登录 (Entrar), conclua o login da conta Baidu (SMS, QR code ou senha, além de
+verificações 百度安全验证 quando exibidas) e depois em **Concluir login**.
+
+A restauração passa a aceitar `ernie`. O egress libera `.baidu.com`,
+`ms.bdstatic.com`, `psstatic.cdn.bcebos.com` e `aisearch.cdn.bcebos.com`,
+observados no chat e na API de conversa. Hosts adicionais do passport só devem
+ser acrescentados após falhas concretas. Veja
+[o registro da integração](../docs/ernie-integration.md); o envio com conta
+real ainda não foi validado.

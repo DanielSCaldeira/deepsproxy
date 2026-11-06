@@ -16,6 +16,7 @@ const env = {
   PERPLEXITY_PROFILE_DIR: path.join(directory, 'perplexity'),
   COHERE_PROFILE_DIR: path.join(directory, 'cohere'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
+  ERNIE_PROFILE_DIR: path.join(directory, 'ernie'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',
 };
 delete env.PROVIDER_PROFILE_DIR;

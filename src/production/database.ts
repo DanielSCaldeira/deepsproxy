@@ -92,7 +92,7 @@ export async function audit(db: Database, actor: string | null, action: string, 
   await db.query('INSERT INTO audit(actor_id,action,subject_id) VALUES($1,$2,$3)', [actor, action, subject]);
 }
 
-export const providers = ['deepseek', 'qwen', 'chatgpt', 'claude', 'perplexity', 'cohere'] as const;
+export const providers = ['deepseek', 'qwen', 'chatgpt', 'claude', 'perplexity', 'cohere', 'ernie'] as const;
 const laterProviders = providers.filter(p => p !== 'deepseek' && p !== 'qwen' && p !== 'chatgpt');
 export type Provider = typeof providers[number];
 export type ProviderAccount = { id: string; user_id: string; provider: Provider };
@@ -103,4 +103,5 @@ export async function ensureAccounts(db: Database, user: string) {
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'claude') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'perplexity') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'cohere') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
+  await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'ernie') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
 }
