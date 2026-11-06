@@ -31,6 +31,8 @@ export const COPILOT_SELECTORS = {
   regionBlock: '[data-testid="region-block-title"]',
   // Microsoft 365 Copilot app (copilot.com/chat): contenteditable span, rendered only when signed in.
   m365Editor: '#m365-chat-editor-target-element[role="textbox"]',
+  // E-mail field of the Microsoft sign-in page (login.live.com and login.microsoftonline.com).
+  microsoftSignIn: 'input[name="loginfmt"]',
 } as const;
 const modeButton = (mode: string) => `[data-testid="composer-chat-mode-${mode}-button"]`;
 const MODE_TRIGGER = `button:is(${COPILOT_MODES.map(modeButton).join(',')}):not([role="menuitem"])`;
@@ -107,17 +109,25 @@ export class CopilotProvider implements ProviderAdapter {
     await pauseBeforeProviderAction('open-chat');
     await this.page.goto(COPILOT_CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     // Wait for the consumer app to show what it is serving this account.
+    const page = this.page;
     const consumer = [COPILOT_SELECTORS.editor.replace(':visible', ''), COPILOT_SELECTORS.anonymous, COPILOT_SELECTORS.regionBlock].join(', ');
-    await this.page.locator(consumer).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
-    const blocked = await this.page.locator(COPILOT_SELECTORS.regionBlock).first().isVisible().catch(() => false);
-    if (blocked || new URL(this.page.url()).origin === COPILOT_M365_ORIGIN) await this.openM365();
+    await page.locator(consumer).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
+    const visible = (selector: string) => page.locator(selector).first().isVisible().catch(() => false);
+    // In the headful worker the consumer app first rendered its sign-in header and only then the
+    // region block for the signed-in account (2026-11-06), so anything but its signed-in chat is
+    // checked against the Microsoft 365 app, where this login happens.
+    const consumerChat = new URL(page.url()).origin === COPILOT_ORIGIN && await visible(COPILOT_SELECTORS.editor)
+      && !await visible(COPILOT_SELECTORS.anonymous) && !await visible(COPILOT_SELECTORS.regionBlock);
+    if (!consumerChat) await this.openM365();
   }
   /** Microsoft 365 Copilot app: the Microsoft account session passes through the Microsoft sign-in redirects. */
   private async openM365(): Promise<void> {
     const page = this.page!;
     await page.goto(COPILOT_M365_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await page.waitForURL(url => url.origin === COPILOT_M365_ORIGIN && url.pathname.startsWith('/chat'), { timeout: 30_000 }).catch(() => {});
-    await page.locator(COPILOT_SELECTORS.m365Editor).first().waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
+    // Signed in, the redirect chain (login.microsoftonline.com, login.live.com) returns to copilot.com/chat
+    // and renders the editor; signed out, it stops at the Microsoft sign-in form.
+    await page.locator(`${COPILOT_SELECTORS.m365Editor}, ${COPILOT_SELECTORS.microsoftSignIn}`).first()
+      .waitFor({ state: 'visible', timeout: 45_000 }).catch(() => {});
   }
   getActivePage() { return this.page; }
   isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }

@@ -158,6 +158,9 @@ async function copilotFixture(context: BrowserContext, fixture: Fixture) {
       });
     </script>` });
   });
+  // Signed out, the Microsoft 365 app ends at the Microsoft sign-in form.
+  await context.route('https://copilot.com/**', route => route.fulfill({ contentType: 'text/html',
+    body: '<form><input type="email" name="loginfmt" aria-label="Email, telefone ou Skype"></form>' }));
 }
 
 test('Copilot frontend fixture: signed-in account, modes, generation, limits, expiry and guard release', async () => {
@@ -304,7 +307,7 @@ test('Copilot region block falls back to the Microsoft 365 Copilot app for login
       // Observed 2026-11-06 for a signed-in account: the consumer app shows a region block.
       await context.route('https://copilot.microsoft.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1 data-testid="region-block-title">Indisponível na sua região</h1>' }));
       await context.route('https://copilot.com/**', route => route.fulfill({ contentType: 'text/html',
-        body: '<main><span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" aria-label="Enviar uma mensagem para o Copilot"></span></main>' }));
+        body: '<main><span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" style="display:inline-block;min-width:300px;min-height:24px" aria-label="Enviar uma mensagem para o Copilot"></span></main>' }));
       const page = await context.newPage();
       Object.assign(provider, { context, page });
       await (provider as any).navigate(); // the real launch ends by opening the chat
@@ -319,6 +322,45 @@ test('Copilot region block falls back to the Microsoft 365 Copilot app for login
     // Sending through the Microsoft 365 app is not built yet: the error says so instead of waiting.
     await assert.rejects(async () => collect(await provider.generate('Teste', 'copilot/auto', false)),
       (error: any) => error.status === 503 && /Microsoft 365 Copilot/.test(error.message));
+  } finally {
+    await provider.close(); await browser.close();
+    if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('Copilot sign-in header shown before the region block still checks the Microsoft 365 app', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'copilot-m365-header-'));
+  const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
+  const browser = await chromium.launch();
+  const provider = new CopilotProvider();
+  let signedIn = true, reopened = 0, humanRunning = true;
+  try {
+    const launch = async () => {
+      const context = await browser.newContext();
+      // Headful worker, 2026-11-06: the sign-in header rendered first, the region block 3 s later.
+      await context.route('https://copilot.microsoft.com/**', route => route.fulfill({ contentType: 'text/html',
+        body: '<button data-testid="sign-in-exp-chat-header-button">Entrar</button><script>setTimeout(() => { document.body.innerHTML = \'<h1 data-testid="region-block-title">Indisponível</h1>\'; }, 3000);</script>' }));
+      await context.route('https://copilot.com/**', route => route.fulfill({ contentType: 'text/html', body: signedIn
+        ? '<main><span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" style="display:inline-block;min-width:300px;min-height:24px"></span></main>'
+        : '<form><input type="email" name="loginfmt"></form>' }));
+      const page = await context.newPage();
+      Object.assign(provider, { context, page });
+      await (provider as any).navigate();
+    };
+    const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; }, start: async () => { reopened++; humanRunning = true; } };
+    Object.assign(provider, { manualLogin: true, interactive: fake, launch });
+    signedIn = false;
+    const started = Date.now();
+    await assert.rejects(() => provider.finishLogin(), /Concluir login novamente/);
+    assert.equal(reopened, 1);
+    assert.ok(Date.now() - started < 20_000, 'a signed-out Microsoft 365 app ends at the sign-in form without the full timeout');
+    signedIn = true;
+    await provider.finishLogin();
+    assert.equal(reopened, 1, 'the signed-in account must not reopen the login window');
+    const status = await provider.status();
+    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true);
+    assert.equal(new URL(provider.getActivePage()!.url()).origin, 'https://copilot.com');
   } finally {
     await provider.close(); await browser.close();
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
