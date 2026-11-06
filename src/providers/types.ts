@@ -1,6 +1,6 @@
 import type { Page } from 'playwright';
 
-export type ProviderId = 'deepseek' | 'qwen' | 'chatgpt' | 'claude' | 'perplexity' | 'cohere' | 'ernie' | 'gemini' | 'copilot' | 'kimi' | 'mistral' | 'quillbot' | 'meta';
+export type ProviderId = 'deepseek' | 'qwen' | 'chatgpt' | 'claude' | 'perplexity' | 'cohere' | 'ernie' | 'gemini' | 'copilot' | 'kimi' | 'mistral' | 'quillbot' | 'meta' | 'grok';
 export type ProviderEvent =
   | { type: 'content' | 'reasoning'; text: string }
   | { type: 'usage'; completionTokens: number }

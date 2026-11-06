@@ -24,6 +24,7 @@ class FakeWorkers extends Workers {
   copilotAccounts = new Set<string>();
   quillbotAccounts = new Set<string>();
   metaAccounts = new Set<string>();
+  grokAccounts = new Set<string>();
   requestSignals = new Map<string, AbortSignal>();
   override async provision(action:string,id?:string) { return action==='list'?{workers:[]}:{host:`worker-${id}`}; }
   override async request(id:string,path:string,init:RequestInit={},start=true) {
@@ -35,7 +36,7 @@ class FakeWorkers extends Workers {
       const body=JSON.parse(String(init.body));
       return body.stream ? new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}) : Response.json({choices:[{message:{content:'ok'}}]});
     }
-    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.claudeAccounts.has(id)?'claude/auto':this.perplexityAccounts.has(id)?'perplexity/auto':this.cohereAccounts.has(id)?'cohere/auto':this.ernieAccounts.has(id)?'ernie/smartMode':this.geminiAccounts.has(id)?'gemini/auto':this.copilotAccounts.has(id)?'copilot/auto':this.quillbotAccounts.has(id)?'quillbot/chat':this.metaAccounts.has(id)?'meta/auto':this.chatgptAccounts.has(id)?'chatgpt/auto':this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
+    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.claudeAccounts.has(id)?'claude/auto':this.perplexityAccounts.has(id)?'perplexity/auto':this.cohereAccounts.has(id)?'cohere/auto':this.ernieAccounts.has(id)?'ernie/smartMode':this.geminiAccounts.has(id)?'gemini/auto':this.copilotAccounts.has(id)?'copilot/auto':this.quillbotAccounts.has(id)?'quillbot/chat':this.metaAccounts.has(id)?'meta/auto':this.grokAccounts.has(id)?'grok/auto':this.chatgptAccounts.has(id)?'chatgpt/auto':this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
     return Response.json({ok:true});
   }
 }
@@ -188,6 +189,13 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.equal(meta.status,200); await meta.text();
     assert.equal(workers.calls.at(-1)!.id,aliceMeta.id);
     await workers.stopAccount(aliceMeta.id); // keep the fixture within its worker capacity
+    const aliceGrok=aliceAccounts.find((a:any)=>a.provider==='grok');
+    assert.equal(aliceGrok.name,'Grok'); assert.equal(aliceGrok.manualLoginConfirmation,true);
+    workers.grokAccounts.add(aliceGrok.id);
+    await workers.ensure(aliceGrok.id); await workers.status(aliceGrok.id);
+    const grok=await request('/v1/chat/completions','POST',{model:'grok/auto',messages:[]},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(grok.status,200); await grok.text();
+    assert.equal(workers.calls.at(-1)!.id,aliceGrok.id);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);

@@ -20,6 +20,7 @@ const env = {
   KIMI_PROFILE_DIR: path.join(directory, 'kimi'),
   MISTRAL_PROFILE_DIR: path.join(directory, 'mistral'),
   QUILLBOT_PROFILE_DIR: path.join(directory, 'quillbot'),
+  GROK_PROFILE_DIR: path.join(directory, 'grok'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   ERNIE_PROFILE_DIR: path.join(directory, 'ernie'),
   META_PROFILE_DIR: path.join(directory, 'meta'),
