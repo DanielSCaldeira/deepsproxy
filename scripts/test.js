@@ -15,6 +15,7 @@ const env = {
   CLAUDE_PROFILE_DIR: path.join(directory, 'claude'),
   PERPLEXITY_PROFILE_DIR: path.join(directory, 'perplexity'),
   COHERE_PROFILE_DIR: path.join(directory, 'cohere'),
+  GEMINI_PROFILE_DIR: path.join(directory, 'gemini'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   ERNIE_PROFILE_DIR: path.join(directory, 'ernie'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',

@@ -6,6 +6,7 @@ import type { BrowserContext } from 'playwright';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function getProfileDirectory(): string {
+  if (!process.env.PROVIDER_PROFILE_DIR && process.env.PROVIDER === 'gemini') return path.resolve(projectRoot, process.env.GEMINI_PROFILE_DIR || 'gemini_profile');
   return path.resolve(projectRoot, process.env.PROVIDER_PROFILE_DIR || (process.env.PROVIDER === 'claude' ? process.env.CLAUDE_PROFILE_DIR || 'claude_profile' : process.env.PROVIDER === 'perplexity' ? process.env.PERPLEXITY_PROFILE_DIR || 'perplexity_profile' : process.env.PROVIDER === 'cohere' ? process.env.COHERE_PROFILE_DIR || 'cohere_profile' : process.env.PROVIDER === 'ernie' ? process.env.ERNIE_PROFILE_DIR || 'ernie_profile' : process.env.PROVIDER === 'chatgpt' ? process.env.CHATGPT_PROFILE_DIR || 'chatgpt_profile' : process.env.PROVIDER === 'qwen' ? process.env.QWEN_PROFILE_DIR || 'qwen_profile' : process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile'));
 }
 
