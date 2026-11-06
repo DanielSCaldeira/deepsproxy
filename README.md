@@ -7,6 +7,8 @@ e chave `dsp_` nos aplicativos; o ID do modelo determina o provedor.
 
 ## Provedores e código compartilhado
 
+Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).
+
 Os adaptadores em `src/providers` cuidam somente da autenticação, transporte,
 catálogo e decodificação próprios do serviço. Histórico, resumo, ferramentas,
 emissão OpenAI/SSE, cancelamento e persistência de sessão são compartilhados.
