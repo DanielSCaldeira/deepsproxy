@@ -47,7 +47,8 @@ test('production panel: login, private account status, keys, logout and mobile l
         const snapshot = {accounts:[
         {id:'ds',provider:'deepseek',manualLoginConfirmation:true,name:'DeepSeek',accountState:account,authenticated:restricted||account==='authenticated',originalMessage:restricted?providerMessage:null,suspendedUntil:restricted?'novembro 6, 2026 21:55':null,runtimeState:'running',sessionSaved:true,loginActive:deepseekLogin,checkedAt:'2026-11-03T22:00:00Z',models:['deepseek-v4-flash']},
         {id:'qw',provider:'qwen',name:'Qwen',accountState:qwen,runtimeState:qwenLogin?'running':'sleeping',sessionSaved:qwen==='authenticated',loginActive:qwenLogin,models:qwen==='authenticated'?['qwen/test-model']:[]},
-        {id:'cg',provider:'chatgpt',name:'ChatGPT',manualLoginConfirmation:chatgptManual,accountState:chatgpt,authenticated:chatgpt==='rate_limited',sessionSaved:chatgpt==='rate_limited',runtimeState:'running',loginActive:chatgptLogin,nextAllowedAt:'2026-11-06T00:00:00Z',models:[]}
+        {id:'cg',provider:'chatgpt',name:'ChatGPT',manualLoginConfirmation:chatgptManual,accountState:chatgpt,authenticated:chatgpt==='rate_limited',sessionSaved:chatgpt==='rate_limited',runtimeState:'running',loginActive:chatgptLogin,nextAllowedAt:'2026-11-06T00:00:00Z',models:[]},
+        {id:'qb',provider:'quillbot',name:'QuillBot',accountState:'login_required',authenticated:false,sessionSaved:false,runtimeState:'running',loginActive:true,models:[]}
       ]};
         if (holdAccountRefresh) {
           holdAccountRefresh = false;
@@ -87,7 +88,9 @@ test('production panel: login, private account status, keys, logout and mobile l
     await page.locator('#auth-submit').click(); await page.locator('#dashboard').waitFor({state:'visible'});
     await page.locator('[data-provider=deepseek] [data-field=state]').filter({hasText:'Conectada'}).waitFor();
     assert.match(await page.title(),/Proxy IA/);
-    assert.equal(await page.locator('.account-row').count(),3);
+    assert.equal(await page.locator('.account-row').count(),4);
+    // QuillBot follows manual confirmation even when an older gateway omits the flag.
+    assert.equal(await page.locator('[data-provider=quillbot]').getByRole('button',{name:'Concluir login',exact:true}).isVisible(),true);
     assert.equal(await page.locator('[data-provider=qwen] [data-field=state]').textContent(),'Ainda não conectada');
     assert.equal(await page.locator('#administration').isVisible(),false);
     assert.match(await page.locator('[data-provider=deepseek]').textContent() || '',/Sessão salva/);
