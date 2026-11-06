@@ -22,6 +22,8 @@ const MODEL_ROW = '[data-testid="chat-mode-model-row"]';
 const MODEL_MENU = '[role="menu"][aria-label="选择模型"], .ci-input-mode-cascade-panel';
 const MODEL_ITEM = '[role="menuitemradio"][data-model-name]';
 const CAPTCHA_HOST = /^(wappass|passport)\.baidu\.com$/;
+// The remote login opens Baidu passport directly (QR code, username or SMS); `u` returns to the chat.
+export const ERNIE_LOGIN_URL = 'https://passport.baidu.com/v2/?login&u=' + encodeURIComponent('https://wenxin.baidu.com/');
 
 /** One account per worker. The website prepares and sends its own requests. */
 export class ErnieProvider implements ProviderAdapter {
@@ -94,8 +96,8 @@ export class ErnieProvider implements ProviderAdapter {
       this.transitioning = true;
       try {
         await this.closeAutomation();
-        // The human clicks 登录 on the chat page; Baidu passport handles SMS/QR/captcha there.
-        this.interactive ??= new InteractiveBrowser(this.directory, ORIGIN + '/');
+        // Baidu passport handles QR/username/SMS/captcha and then redirects to the chat page.
+        this.interactive ??= new InteractiveBrowser(this.directory, ERNIE_LOGIN_URL);
         await this.interactive.start(); this.manualLogin = true;
       } finally { this.transitioning = false; }
     });

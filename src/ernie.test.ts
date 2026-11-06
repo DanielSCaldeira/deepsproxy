@@ -8,7 +8,7 @@ import { ERNIE_INPUT_LIMIT, ernieError, ernieLoginFromHtml, ernieModels, parseEr
 import { installErnieCapture } from './providers/ernie-browser.ts';
 import { providerId, providerIdForModel } from './providers/catalog.ts';
 import { interactiveWorkerArguments } from './services/interactive-browser.ts';
-import { ErnieProvider } from './providers/ernie.ts';
+import { ERNIE_LOGIN_URL, ErnieProvider } from './providers/ernie.ts';
 import { getProvider } from './providers/registry.ts';
 import { apiError } from './utils/api-error.ts';
 import { GenerationGuard, UpstreamError } from './services/generation-guard.ts';
@@ -44,8 +44,11 @@ test('Ernie catalog, routing, login detection and error mapping', () => {
   const html = (login: unknown) => `<script type="application/json" name="aiTabFrameBaseData">{"token":"t","userInfo":{"name":"","isUserLogin":${JSON.stringify(login)}}}</script>`;
   assert.equal(ernieLoginFromHtml(html(0)), false); assert.equal(ernieLoginFromHtml(html(1)), true);
   assert.equal(ernieLoginFromHtml(html(true)), true); assert.equal(ernieLoginFromHtml('<html>百度安全验证</html>'), null);
-  const args = interactiveWorkerArguments('/profile', 'https://wenxin.baidu.com/');
-  assert.equal(args.at(-1), 'https://wenxin.baidu.com/'); assert.ok(!args.some(a => a.includes('remote-debugging')));
+  // The remote login opens Baidu passport, which returns to the chat page after sign-in.
+  assert.equal(new URL(ERNIE_LOGIN_URL).hostname, 'passport.baidu.com');
+  assert.equal(new URL(ERNIE_LOGIN_URL).searchParams.get('u'), 'https://wenxin.baidu.com/');
+  const args = interactiveWorkerArguments('/profile', ERNIE_LOGIN_URL);
+  assert.equal(args.at(-1), ERNIE_LOGIN_URL); assert.ok(!args.some(a => a.includes('remote-debugging')));
   assert.equal(ernieError(401).status, 401); assert.equal(ernieError(429).status, 429);
   assert.equal(ernieError(503, 'security_verification').status, 503); assert.doesNotMatch(ernieError(403).message, /login/);
 });

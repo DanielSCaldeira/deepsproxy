@@ -28,12 +28,17 @@ function button(parent, title, run, danger = false) { const button = document.cr
 function needsLoginConfirmation(account) {
   return account?.manualLoginConfirmation ?? ['deepseek', 'chatgpt', 'claude', 'perplexity', 'cohere', 'ernie', 'gemini', 'copilot', 'kimi', 'mistral', 'quillbot', 'meta', 'grok'].includes(account?.provider);
 }
+// Extra guidance for login screens that are not obvious (language, account type).
+const loginHints = {
+  ernie: ' A tela do Baidu só existe em chinês: 扫码登录 = QR code pelo app Baidu; 用户名登录 = usuário e senha; 短信登录 = código por SMS; 登录 = entrar. Depois de entrar, o chat 文心 (Ernie) abre sozinho.',
+  copilot: ' Use uma conta pessoal (Microsoft, Google ou Apple); o chat abre em copilot.com. Se aparecer o login do Microsoft 365 (conta corporativa), clique em Reabrir tela.',
+};
 function updateRemoteConfirmation() {
   const account = accountList.find(account => account.provider === remoteProvider);
   el('remote-finish').hidden = !needsLoginConfirmation(account);
-  el('remote-help').textContent = needsLoginConfirmation(account)
+  el('remote-help').textContent = (needsLoginConfirmation(account)
     ? 'Após entrar no ' + account.name + ' e ver o chat, clique em Concluir login nesta barra para validar e salvar sua sessão.'
-    : 'Conclua a autenticação na tela remota. A tela fecha após a validação da sessão.';
+    : 'Conclua a autenticação na tela remota. A tela fecha após a validação da sessão.') + (loginHints[remoteProvider] || '');
 }
 // Sequential login: opens each service that is not logged in yet, one at a time. When the current
 // service has a saved session, its browser is released (capacity) and the next one opens.
