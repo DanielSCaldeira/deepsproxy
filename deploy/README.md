@@ -359,3 +359,15 @@ falhas concretas. Os controles de saída para redes privadas continuam ativos.
 
 Veja [o registro de validação](../docs/chatgpt-integration.md) antes de tratar
 esta integração como validada com uma conta real.
+
+## Conta Claude
+
+A migração 6 adiciona uma conta `claude` por usuário, preservando as contas
+existentes. O worker recebe `PROVIDER=claude` e `PROVIDER_PROFILE_DIR=/profile`.
+O card Claude abre `https://claude.ai/login` no navegador remoto (código por
+e-mail, Google ou SSO, à escolha da pessoa); depois de ver o chat, clique em
+**Concluir login**. A restauração passa a aceitar `claude`. A ACL do egress
+acrescenta `.claude.ai`, `s-cdn.anthropic.com` e `assets-proxy.anthropic.com`;
+Cloudflare, hCaptcha e Google já estavam liberados. Veja
+[o registro da integração](../docs/claude-integration.md): o envio real com
+conta ainda não foi validado.
