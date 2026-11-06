@@ -51,8 +51,9 @@
 	],
 	"syscalls": [
 		{
-			"comment": "Allow create user namespaces",
+			"comment": "Allow create user namespaces. chroot is needed by Chromium's namespace sandbox inside its own user namespace; the kernel still requires CAP_SYS_CHROOT in the caller's namespace, which the worker process does not have.",
 			"names": [
+				"chroot",
 				"clone",
 				"setns",
 				"unshare"

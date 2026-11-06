@@ -33,6 +33,9 @@ const events = new Set([
   'upstream.started', 'upstream.response', 'upstream.failed',
   'stream.started', 'stream.finished', 'stream.failed', 'stream.cancelled', 'stream.code',
   'action.wait', 'queue.acquired',
+  'browser.log_started', 'browser.console', 'browser.request', 'browser.response',
+  'browser.request_finished', 'browser.request_failed', 'browser.page_error', 'browser.page_opened',
+  'browser.captcha_result',
 ]);
 const enums: Record<string, readonly string[]> = {
   operation: ['client', 'summary'],
@@ -92,7 +95,8 @@ export class DiagnosticWriter {
   private pending = 0;
   private tail: Promise<void> = Promise.resolve();
   private lastWarning = -Infinity;
-  constructor(readonly file: string, private maxBytes = 10 * 1024 * 1024, private maxPending = 1000) {}
+  constructor(readonly file: string, private maxBytes = 10 * 1024 * 1024, private maxPending = 1000,
+    private filter: (fields: Record<string, unknown>) => Record<string, unknown> = safeFields, private mirror = false) {}
 
   private warn(): void {
     if (Date.now() - this.lastWarning < 60_000) return;
@@ -103,7 +107,8 @@ export class DiagnosticWriter {
   emit(event: string, fields: Record<string, unknown> = {}, context = diagnosticContext()): void {
     if (!events.has(event)) return;
     if (this.pending >= this.maxPending) { this.warn(); return; }
-    const line = JSON.stringify({ timestamp: new Date().toISOString(), pid: process.pid, runId, event, ...safeFields({ ...context, ...fields }) }) + '\n';
+    const line = JSON.stringify({ timestamp: new Date().toISOString(), pid: process.pid, runId, event, ...this.filter({ ...context, ...fields }) }) + '\n';
+    if (this.mirror) { try { process.stdout.write(line); } catch { this.warn(); } }
     this.pending++;
     this.tail = this.tail.then(async () => {
       await fs.mkdir(path.dirname(this.file), { recursive: true });

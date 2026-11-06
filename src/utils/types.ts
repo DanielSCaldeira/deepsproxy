@@ -36,6 +36,7 @@ export interface Message {
 // --- Request Types ---
 
 export interface OpenAIRequest {
+  reasoning_effort?: string;
   model: string;
   messages: Message[];
   stream?: boolean;

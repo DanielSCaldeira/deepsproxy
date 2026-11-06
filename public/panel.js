@@ -1,8 +1,12 @@
 const el = id => document.getElementById(id);
-let csrf = '', me, mode = 'login', busy = false, refreshing = false, rfb, RFB;
+let remoteProvider, disconnectedProvider, accountList = [];
+let csrf = '', me, mode = 'login', busy = false, refreshTask, rfb, RFB;
+let loginQueue, queueStepScheduled = false;
 const linkToken = new URLSearchParams(location.hash.slice(1)).get('token');
 if (linkToken) history.replaceState(null, '', '/');
-function notice(message = '') { el('message').textContent = message; el('message').hidden = !message; }
+function notice(message = '') {
+  for (const id of ['message', 'remote-message']) { el(id).textContent = message; el(id).hidden = !message; }
+}
 async function api(path, method = 'GET', body) {
   const response = await fetch(path, { method, headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
   const data = await response.json();
@@ -13,12 +17,104 @@ function showAuth() {
   el('authentication').hidden = false; el('dashboard').hidden = true; el('logout').hidden = true; el('who').textContent = ''; csrf = '';
   for (const id of ['key-secret','link-value','audit']) el(id).textContent = '';
   for (const id of ['new-key','share-link']) el(id).hidden = true;
-  el('keys').replaceChildren(); el('users').replaceChildren();
+  el('keys').replaceChildren(); el('users').replaceChildren(); el('accounts').replaceChildren(); accountList = []; el('available-models').textContent = ''; remoteProvider = undefined;
+  loginQueue = undefined; renderQueue();
 }
-function closeRemote() { if (rfb) { const connection = rfb; rfb = undefined; connection.disconnect(); } el('remote-panel').hidden = true; el('remote').replaceChildren(); }
+function hideRemote() { el('remote-panel').hidden = true; document.body.classList.remove('remote-open'); }
+function closeRemote() { disconnectedProvider = undefined; if (rfb) { const connection = rfb; rfb = undefined; connection.disconnect(); } hideRemote(); el('remote').replaceChildren(); }
 async function copy(value) { try { await navigator.clipboard.writeText(value); notice('Copiado.'); } catch { notice('Selecione o texto e copie.'); } }
 function textCell(row, text) { const cell = document.createElement('td'); cell.textContent = text; row.append(cell); return cell; }
 function button(parent, title, run, danger = false) { const button = document.createElement('button'); button.textContent = title; button.className = danger ? 'danger' : 'secondary'; button.addEventListener('click', () => guarded(run)); parent.append(button); }
+function needsLoginConfirmation(account) {
+  return account?.manualLoginConfirmation ?? ['deepseek', 'qwen', 'chatgpt', 'claude', 'perplexity', 'cohere', 'ernie', 'gemini', 'copilot', 'kimi', 'mistral', 'quillbot', 'meta', 'grok'].includes(account?.provider);
+}
+// Extra guidance for login screens that are not obvious (language, account type).
+const loginHints = {
+  ernie: ' A tela do Baidu só existe em chinês: 扫码登录 = QR code pelo app Baidu; 用户名登录 = usuário e senha; 短信登录 = código por SMS; 登录 = entrar. Depois de entrar, o chat 文心 (Ernie) abre sozinho.',
+  copilot: ' Use uma conta pessoal (Microsoft, Google ou Apple); o chat abre em copilot.com. Se aparecer o login do Microsoft 365 (conta corporativa), clique em Reabrir tela.',
+};
+function updateRemoteConfirmation() {
+  const account = accountList.find(account => account.provider === remoteProvider);
+  el('remote-finish').hidden = !needsLoginConfirmation(account);
+  el('remote-help').textContent = (needsLoginConfirmation(account)
+    ? 'Após entrar no ' + account.name + ' e ver o chat, clique em Concluir login nesta barra para validar e salvar sua sessão.'
+    : 'Conclua a autenticação na tela remota. A tela fecha após a validação da sessão.') + (loginHints[remoteProvider] || '');
+}
+// Sequential login: opens each service that is not logged in yet, one at a time. When the current
+// service has a saved session, its browser is released (capacity) and the next one opens.
+const loggedIn = account => account.accountState === 'authenticated' || account.accountState === 'rate_limited' || account.authenticated === true;
+const serviceName = provider => accountList.find(account => account.provider === provider)?.name || provider;
+function renderQueue() {
+  const current = loginQueue?.current;
+  el('queue-skip').hidden = !loginQueue; el('queue-stop').hidden = !loginQueue;
+  el('connect-pending').textContent = loginQueue ? 'Abrir login atual' : 'Conectar pendentes';
+  el('queue-status').hidden = !current;
+  if (current) el('queue-status').textContent = 'Login em sequência: ' + (loginQueue.total - loginQueue.pending.length) + ' de ' + loginQueue.total + ' — ' + serviceName(current) + '. Quando a sessão for salva, o próximo serviço abre sozinho.';
+}
+async function startQueue() {
+  if (loginQueue) { if (loginQueue.current) await remote(loginQueue.current); return; }
+  await refresh(true);
+  const pending = accountList.filter(account => !loggedIn(account) && account.accountState !== 'suspended').map(account => account.provider);
+  if (!pending.length) { notice('Todas as contas já estão conectadas.'); return; }
+  loginQueue = { pending, total: pending.length, done: [], skipped: [] };
+  await nextInQueue();
+}
+async function nextInQueue() {
+  while (loginQueue) {
+    const provider = loginQueue.pending.shift();
+    if (!provider) { finishQueue('Login em sequência concluído'); return; }
+    loginQueue.current = provider; loginQueue.openedAt = Date.now(); renderQueue();
+    try { await operation('connect', provider); renderQueue(); return; }
+    catch (error) {
+      if (/capacidade/i.test(error.message)) { loginQueue.pending.unshift(provider); loginQueue.current = undefined; finishQueue('Login em sequência pausado: capacidade de navegadores ocupada. Aguarde alguns minutos e clique em Conectar pendentes'); return; }
+      loginQueue.current = undefined; loginQueue.skipped.push(serviceName(provider) + ' (' + error.message + ')');
+    }
+  }
+}
+async function releaseBrowser(provider) {
+  try { await api('/api/me/accounts/' + provider + '/connection/sleep','POST',{}); } catch { /* The idle sweep frees it later. */ }
+}
+async function leaveCurrent(skip) {
+  const provider = loginQueue?.current;
+  if (!provider) return;
+  loginQueue.current = undefined;
+  if (skip) loginQueue.skipped.push(serviceName(provider)); else loginQueue.pending.unshift(provider);
+  await api('/api/me/accounts/' + provider + '/connection/cancel','POST',{});
+  closeRemote(); remoteProvider = undefined;
+  await releaseBrowser(provider);
+}
+function finishQueue(title) {
+  const queue = loginQueue; loginQueue = undefined; renderQueue();
+  if (!queue) return;
+  const parts = [queue.done.length + ' conectado(s)' + (queue.done.length ? ' (' + queue.done.join(', ') + ')' : '')];
+  if (queue.skipped.length) parts.push('pulado(s): ' + queue.skipped.join(', '));
+  if (queue.pending.length) parts.push('não aberto(s): ' + queue.pending.map(serviceName).join(', '));
+  notice(title + ' — ' + parts.join('; ') + '.');
+}
+// 'saved': the current service is logged in with a saved session; 'abandoned': its remote login ended without one.
+function queueStep() {
+  const account = accountList.find(account => account.provider === loginQueue?.current);
+  if (!account) return null;
+  if (!account.loginActive && loggedIn(account) && account.sessionSaved) return 'saved';
+  if (!account.loginActive && !loggedIn(account) && !rfb && Date.now() - loginQueue.openedAt > 60_000) return 'abandoned';
+  return null;
+}
+async function advanceQueue() {
+  const step = queueStep();
+  if (!step) return;
+  const provider = loginQueue.current, name = serviceName(provider);
+  loginQueue.current = undefined;
+  if (step === 'saved') loginQueue.done.push(name); else loginQueue.skipped.push(name + ' (login não concluído)');
+  if (remoteProvider === provider) { closeRemote(); remoteProvider = undefined; }
+  await releaseBrowser(provider);
+  await nextInQueue();
+}
+function scheduleQueue() {
+  if (!loginQueue || queueStepScheduled || !queueStep()) return;
+  queueStepScheduled = true;
+  const run = () => { if (busy) { setTimeout(run, 500); return; } queueStepScheduled = false; if (queueStep()) void guarded(advanceQueue); };
+  setTimeout(run, 0);
+}
 async function guarded(run) { if (busy) return; busy = true; for (const b of document.querySelectorAll('button')) b.disabled = true; try { notice(); await run(); } catch (error) { notice(error.message); } finally { busy = false; for (const b of document.querySelectorAll('button')) b.disabled = false; } }
 async function signedIn() {
   me = await api('/api/me'); csrf = me.csrf;
@@ -27,28 +123,71 @@ async function signedIn() {
   el('api-base').textContent = location.origin + '/v1'; await refresh(); await keys(); if (me.role === 'admin') await users();
 }
 const states = {
-  authenticated: ['Conectada', 'good', 'Seu login foi reconhecido pelo DeepSeek.'],
-  login_required: ['Login necessário', 'warn', 'Entre novamente para retomar o uso da API.'],
-  suspended: ['Suspensa pelo DeepSeek', 'bad', 'O provedor informou uma suspensão. Recuperar o navegador não remove essa restrição.'],
-  not_initialized: ['Ainda não conectada', 'warn', 'Use Conectar para entrar na sua conta DeepSeek.'],
-  unavailable: ['Não foi possível verificar', 'bad', 'Tente atualizar o status ou recuperar o navegador.'],
+  authenticated: ['Conectada', 'good', 'Seu login está ativo. A tela de login fecha automaticamente após a confirmação.'],
+  login_required: ['Login necessário', 'warn', 'Entre novamente para retomar o uso dos modelos.'],
+  rate_limited: ['Limite de uso atingido', 'warn', 'Login ativo. Aguarde a liberação de uso pelo provedor.'],
+  suspended: ['Suspensa pelo provedor', 'bad', 'Consulte o aviso no serviço antes de tentar novamente.'],
+  not_initialized: ['Ainda não conectada', 'warn', 'Use Conectar para autenticar sua conta.'],
+  unavailable: ['Não foi possível verificar', 'bad', 'Atualize o status ou recupere o navegador.'],
 };
-async function refresh() {
-  if (!me || refreshing) return;
-  refreshing = true;
+function renderAccounts(accounts) {
+  const fragment = document.createDocumentFragment();
+  for (const account of accounts) {
+    const row = document.createElement('article'); row.className = 'account-row'; row.dataset.provider = account.provider;
+    const heading = document.createElement('div'); heading.className = 'row';
+    const title = document.createElement('h3'); title.textContent = account.name;
+    const [label, tone, detail] = states[account.accountState] || states.unavailable;
+    const restrictedLogin = account.accountState === 'suspended' && account.authenticated === true;
+    const status = document.createElement('strong'); status.className = tone; status.dataset.field = 'state'; status.textContent = restrictedLogin ? 'Autenticada · conta bloqueada' : label;
+    heading.append(title, status); row.append(heading);
+    const description = document.createElement('p'); description.className = 'muted'; description.textContent = (restrictedLogin ? 'Login confirmado. O provedor bloqueou o uso da conta; os envios estão interrompidos.' : account.loginActive ? (needsLoginConfirmation(account) ? 'Entre no serviço e clique em Concluir login para validar e salvar sua sessão.' : 'Login em andamento. Conclua a autenticação na tela remota.') : detail) + (account.suspendedUntil ? ' Até: ' + account.suspendedUntil : ''); row.append(description);
+    if (['suspended','rate_limited'].includes(account.accountState) && account.originalMessage) {
+      const warning = document.createElement('p'); warning.dataset.field = 'provider-message'; warning.textContent = 'Aviso do provedor: ' + account.originalMessage; row.append(warning);
+    }
+    if (account.accountState === 'rate_limited' && account.nextAllowedAt) { const retry = document.createElement('p'); retry.textContent = 'Próxima tentativa: ' + new Date(account.nextAllowedAt).toLocaleString('pt-BR'); row.append(retry); }
+    const meta = document.createElement('div'); meta.className = 'account-meta';
+    const runtime = account.loginActive ? 'Login em andamento' : account.runtimeState === 'sleeping' ? 'Navegador em espera' : account.runtimeState === 'unavailable' ? 'Navegador indisponível' : account.busy ? 'Processando' : 'Navegador disponível';
+    for (const text of [runtime, account.sessionSaved ? 'Sessão salva' : 'Sessão ainda não salva', account.checkedAt ? 'Verificação: ' + new Date(account.checkedAt).toLocaleString('pt-BR') : 'Aguardando primeira verificação', account.queueDepth ? account.queueDepth + ' chamada(s) na fila' : '']) {
+      if (text) { const item = document.createElement('span'); item.textContent = text; meta.append(item); }
+    }
+    row.append(meta);
+    const actions = document.createElement('div'); actions.className = 'actions'; actions.style.marginTop = '16px';
+    button(actions, account.loginActive ? 'Abrir login' : account.authenticated || account.accountState === 'authenticated' ? 'Reconectar conta' : 'Conectar', () => account.loginActive ? remote(account.provider) : operation('connect', account.provider));
+    if (account.loginActive && needsLoginConfirmation(account)) button(actions, 'Concluir login', () => operation('finish', account.provider));
+    button(actions, 'Recuperar navegador', () => operation('recover', account.provider));
+    button(actions, 'Desconectar', () => operation('disconnect', account.provider), true);
+    row.append(actions); fragment.append(row);
+  }
+  el('accounts').replaceChildren(fragment);
+  // Polling may finish while another action is pending.
+  if (busy) for (const b of el('accounts').querySelectorAll('button')) b.disabled = true;
+  const models = accounts.filter(account => account.accountState === 'authenticated').flatMap(account => account.models || []).map(model => typeof model === 'string' ? model : model.id);
+  el('available-models').textContent = models.length ? models.join(', ') : 'Conecte um serviço para consultar os modelos.';
+}
+async function refresh(force = false) {
+  if (!me) return;
+  if (refreshTask) {
+    await refreshTask;
+    if (!force || !me) return;
+  }
+  // A completed login needs a new snapshot, even if polling was already active.
+  const task = refreshAccounts();
+  refreshTask = task;
+  try { await task; } finally { if (refreshTask === task) refreshTask = undefined; }
+}
+async function refreshAccounts() {
   try {
-    const state = await api('/api/me/status');
-    const [label, tone, detail] = states[state.accountState] || states.unavailable;
-    el('account-state').textContent = label; el('account-state').className = 'value ' + tone;
-    el('account-detail').textContent = detail + (state.suspendedUntil ? ' Até: ' + state.suspendedUntil : '');
-    const runtime = state.loginActive ? 'Login em andamento' : state.runtimeState === 'sleeping' ? 'Em espera' : state.runtimeState === 'unavailable' ? 'Indisponível' : state.busy ? 'Processando' : 'Disponível';
-    el('runtime-state').textContent = runtime;
-    el('runtime-detail').textContent = state.runtimeState === 'sleeping' ? 'Será iniciado automaticamente no próximo uso. O status da conta é o da última verificação.' : state.runtimeState === 'unavailable' ? 'O status da conta é o da última verificação. A recuperação automática está em andamento.' : state.queueDepth ? state.queueDepth + ' chamada(s) na fila.' : 'Navegador exclusivo da sua conta.';
-    el('saved-state').textContent = state.sessionSaved ? 'Salva na VPS' : 'Ainda não salva';
-    el('checked-at').textContent = state.checkedAt ? 'Última verificação: ' + new Date(state.checkedAt).toLocaleString('pt-BR') : 'Aguardando a primeira verificação.';
-    el('connection-hint').textContent = state.loginActive ? 'Conclua o login na tela abaixo. As chamadas à API aguardam o encerramento deste processo.' : state.accountState === 'authenticated' ? 'Sua sessão será reutilizada. Se o provedor solicitar, você poderá entrar novamente por aqui.' : detail;
-    if (!state.loginActive && rfb) { closeRemote(); if (state.accountState === 'authenticated') notice('DeepSeek conectado. Você já pode gerar uma chave.'); }
-  } catch (error) { notice(error.message); } finally { refreshing = false; }
+    const data = await api('/api/me/accounts');
+    if (!me) return;
+    accountList = data.accounts; renderAccounts(accountList); updateRemoteConfirmation(); renderQueue();
+    const selected = accountList.find(account => account.provider === (disconnectedProvider || remoteProvider));
+    if (selected && !selected.loginActive && (rfb || disconnectedProvider === selected.provider)) {
+      closeRemote();
+      if (selected.accountState === 'authenticated') notice(selected.name + ' conectado. A tela de login foi fechada automaticamente. Seus modelos estão disponíveis.');
+      else if (selected.accountState === 'suspended') notice(selected.authenticated ? 'Login do ' + selected.name + ' confirmado e sessão salva. A conta está bloqueada pelo provedor; os envios estão interrompidos.' : 'A conta do ' + selected.name + ' está bloqueada pelo provedor. Consulte o aviso no painel.');
+    }
+    scheduleQueue();
+  } catch (error) { notice(error.message); }
 }
 async function keys() {
   const data = await api('/api/me/keys'); el('keys').replaceChildren();
@@ -61,38 +200,69 @@ async function users() {
   const audit = await api('/api/admin/audit'); el('audit').textContent = audit.events.map(event => new Date(event.created_at).toLocaleString('pt-BR')+' · '+event.action).join('\n') || 'Nenhuma atividade.';
 }
 function share(data) { el('link-value').textContent = data.url; el('share-link').hidden = false; }
-async function remote() {
+async function remote(provider) {
   if (!RFB) RFB = (await import('/novnc/core/rfb.js')).default;
-  closeRemote();
-  const data = await api('/api/me/remote-ticket','POST',{});
+  if (remoteProvider && remoteProvider !== provider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{});
+  closeRemote(); remoteProvider = provider;
+  const data = await api('/api/me/accounts/' + provider + '/remote-ticket','POST',{});
+  el('remote-title').textContent = 'Entre no ' + (accountList.find(account => account.provider === provider)?.name || provider);
+  updateRemoteConfirmation();
   el('remote-panel').hidden = false;
-  rfb = new RFB(el('remote'), 'wss://' + location.host + '/api/me/remote?ticket=' + encodeURIComponent(data.ticket),{ shared:false });
-  rfb.scaleViewport = true; rfb.resizeSession = false;
+  document.body.classList.add('remote-open');
+  el('remote-fit').textContent = 'Ajustar à tela';
+  el('remote-fit').setAttribute('aria-pressed', 'false');
+  rfb = new RFB(el('remote'), (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/me/remote?ticket=' + encodeURIComponent(data.ticket),{ shared:false });
+  rfb.scaleViewport = false; rfb.clipViewport = false; rfb.resizeSession = false;
   const current = rfb;
-  current.addEventListener('disconnect',()=> { if (rfb === current) { rfb = undefined; el('remote-panel').hidden = true; void refresh(); } });
-  el('remote-panel').scrollIntoView({behavior:'smooth',block:'start'});
+  current.addEventListener('disconnect',()=> { if (rfb === current) { disconnectedProvider = remoteProvider; rfb = undefined; hideRemote(); void refresh(); } });
+  el('remote-fit').focus();
 }
-async function operation(action) {
-  if (action === 'disconnect' && !confirm('Desconectar e apagar a sessão DeepSeek salva? Você precisará fazer login novamente.')) return;
-  if (action !== 'connect') closeRemote();
-  const data = await api('/api/me/connection/'+action,'POST',{});
+async function operation(action, provider) {
+  if (action === 'disconnect' && !confirm('Desconectar e apagar a sessão ' + provider + ' salva? Você precisará fazer login novamente.')) return;
+  if (action !== 'finish' && (remoteProvider === provider || action === 'connect')) closeRemote();
+  const data = await api('/api/me/accounts/' + provider + '/connection/'+action,'POST',{});
   if (data.operationId) {
-    notice('Preparando sua conexão…');
+    notice(action === 'finish' ? 'Validando e salvando sua sessão…' : 'Preparando sua conexão…');
     for (let attempt = 0; attempt < 100; attempt++) {
       await new Promise(resolve => setTimeout(resolve,2000));
       const result = await api('/api/me/operations/'+data.operationId);
       if (result.status === 'failed') throw new Error(result.error);
-      if (result.status === 'done') { notice(); if (action === 'connect') { try { await remote(); } catch { await refresh(); } } await refresh(); return; }
+      if (result.status === 'done') {
+        notice();
+        if (action === 'connect') { try { await remote(provider); } catch { await refresh(true); } }
+        await refresh(true);
+        if (action === 'finish') {
+          const account = accountList.find(account => account.provider === provider);
+          if ((account?.authenticated || account?.accountState === 'authenticated') && account.sessionSaved) {
+            notice(account.accountState === 'suspended'
+              ? 'Login do ' + account.name + ' confirmado e sessão salva. A conta está bloqueada pelo provedor; os envios estão interrompidos.'
+              : account.name + ' conectado. Sessão salva.' + (account.accountState === 'rate_limited' ? ' Limite de uso atingido; aguarde a liberação pelo provedor.' : ' Seus modelos estão disponíveis.'));
+          }
+        }
+        return;
+      }
     }
     throw new Error('A operação continua em andamento. Atualize o status em instantes.');
   }
 }
 el('auth-form').addEventListener('submit',event => { event.preventDefault(); void guarded(async () => { const path = '/api/auth/' + (mode === 'redeem' ? 'redeem' : mode === 'setup' ? 'setup' : 'login'); await api(path,'POST',{ email:el('email').value, password:el('password').value, token:mode === 'redeem' ? linkToken : el('bootstrap').value }); el('password').value=''; el('bootstrap').value=''; await signedIn(); }); });
 el('logout').onclick = () => guarded(async () => { await api('/api/auth/logout','POST',{}); me = null; closeRemote(); showAuth(); });
-el('refresh').onclick = () => guarded(refresh);
-for (const button of document.querySelectorAll('[data-action]')) button.onclick = () => guarded(() => operation(button.dataset.action));
-el('remote-close').onclick = () => guarded(async () => { await api('/api/me/connection/cancel','POST',{}); closeRemote(); await refresh(); });
-el('remote-retry').onclick = () => guarded(async () => { await api('/api/me/connection/cancel','POST',{}); closeRemote(); await operation('connect'); });
+el('refresh').onclick = () => guarded(() => refresh(true));
+el('remote-fit').onclick = () => {
+  if (!rfb) return;
+  rfb.scaleViewport = !rfb.scaleViewport;
+  el('remote-fit').textContent = rfb.scaleViewport ? 'Tamanho real (100%)' : 'Ajustar à tela';
+  el('remote-fit').setAttribute('aria-pressed', String(rfb.scaleViewport));
+};
+el('remote-close').onclick = () => guarded(async () => {
+  if (loginQueue) { await leaveCurrent(false); finishQueue('Login em sequência interrompido'); await refresh(); return; }
+  if (remoteProvider) await api('/api/me/accounts/' + remoteProvider + '/connection/cancel','POST',{}); closeRemote(); remoteProvider = undefined; await refresh();
+});
+el('connect-pending').onclick = () => guarded(startQueue);
+el('queue-skip').onclick = () => guarded(async () => { await leaveCurrent(true); await nextInQueue(); });
+el('queue-stop').onclick = () => guarded(async () => { await leaveCurrent(false); finishQueue('Login em sequência interrompido'); await refresh(); });
+el('remote-finish').onclick = () => guarded(async () => { if (remoteProvider) await operation('finish', remoteProvider); });
+el('remote-retry').onclick = () => guarded(async () => { const provider = remoteProvider; if (!provider) return; await api('/api/me/accounts/' + provider + '/connection/cancel','POST',{}); closeRemote(); await operation('connect', provider); });
 el('key-form').onsubmit = event => { event.preventDefault(); void guarded(async () => { const data = await api('/api/me/keys','POST',{name:el('key-name').value}); el('key-secret').textContent=data.key; el('new-key').hidden=false; el('key-name').value=''; await keys(); }); };
 el('dismiss-key').onclick = () => { el('key-secret').textContent=''; el('new-key').hidden=true; };
 el('copy-key').onclick = () => copy(el('key-secret').textContent);
@@ -107,3 +277,5 @@ async function init() {
 }
 void init().catch(error => notice(error.message));
 setInterval(()=>void refresh(),15000);
+// While a sequential login runs, notice the saved session sooner so the next service opens quickly.
+setInterval(()=>{ if (loginQueue) void refresh(); },4000);

@@ -1,4 +1,101 @@
-# DeepsProxy
+# Proxy IA
+
+Um único projeto para conectar contas DeepSeek, Qwen e ChatGPT a clientes compatíveis com
+OpenAI. O painel multiusuário apresenta **Minhas contas**, com login, recuperação
+e desconexão independentes para cada serviço. Cada usuário usa a mesma URL `/v1`
+e chave `dsp_` nos aplicativos; o ID do modelo determina o provedor.
+
+O [histórico do diagnóstico de login](docs/diagnostico-login-2026-11-05.md)
+registra as alterações, o que funcionou, as tentativas que falharam, as
+evidências dos testes e a validação real que ainda está pendente.
+
+## ChatGPT web
+
+No painel **Minhas contas**, use o card **ChatGPT**, faça login manualmente na
+tela remota e clique em **Concluir login**. O perfil e o worker são exclusivos
+da conta. A autenticação e a geração com uma conta Free real ainda precisam
+ser confirmadas no teste manual.
+
+O modelo `chatgpt/auto` usa a seleção automática disponível no site. Outros IDs
+`chatgpt/<id>` só são anunciados quando aparecem no catálogo da conta e podem
+ser selecionados no menu. Consulte `GET /v1/models`; o catálogo da API OpenAI
+não é usado como catálogo do site. A seleção específica não troca de modelo
+silenciosamente.
+
+A integração cobre texto, streaming e ferramentas executadas pelo cliente.
+Arquivos, imagens, voz e controle de `reasoning_effort` não estão disponíveis.
+A janela de contexto desconhecida é anunciada como `0`, com origem `unknown`;
+o preparo do histórico usa o orçamento estimado compartilhado do proxy.
+A contagem de tokens do proxy é uma estimativa, não uma medição do site.
+Limites de uso preservam o login e adiam a geração.
+
+No modo local, configure `PROVIDER=chatgpt` e, opcionalmente,
+`CHATGPT_PROFILE_DIR`. O diretório padrão é `chatgpt_profile`;
+`PROVIDER_PROFILE_DIR` tem precedência. O painel é o fluxo recomendado de login.
+
+O [registro da integração](docs/chatgpt-integration.md) distingue os testes
+controlados da validação real pendente e documenta o protocolo consultado.
+
+## Meta AI web
+
+No card **Meta AI**, entre na tela remota com Facebook, Instagram ou conta Meta
+e clique em **Concluir login**. O uso anônimo do site não é aceito: o proxy
+exige a conta autenticada. `meta/auto` mantém o modo selecionado no site;
+`meta/think_*` só aparece quando o menu de modos da conta o oferece. A resposta
+é entregue ao final da geração. No modo local, use `PROVIDER=meta` e,
+opcionalmente, `META_PROFILE_DIR` (padrão `meta_profile`). Veja o
+[registro da integração](docs/meta-integration.md) e as validações pendentes.
+
+## Provedores e código compartilhado
+
+Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).
+O status de cada site planejado está no [roadmap de provedores](docs/roadmap-provedores.md).
+
+Os adaptadores em `src/providers` cuidam somente da autenticação, transporte,
+catálogo e decodificação próprios do serviço. Histórico, resumo, ferramentas,
+emissão OpenAI/SSE, cancelamento e persistência de sessão são compartilhados.
+Cada worker executa uma conta/provedor com perfil e rede exclusivos.
+
+O suporte Qwen usa como referência somente o protocolo necessário do
+[qwenproxy](https://github.com/pedrofariasx/qwenproxy/tree/e599886dfa2b199364e03c7bffd76ff746183972).
+A atribuição ISC está em `src/providers/QWEN-NOTICE`. Esta integração cobre texto,
+streaming e chamadas de ferramentas, sem importar o painel ou a gestão de
+contas do projeto de referência. O cliente executa as ferramentas e devolve seus
+resultados no histórico, como já ocorre no DeepSeek.
+
+Os modelos DeepSeek mantêm seus IDs. Os modelos Qwen aparecem como
+`qwen/<id-original>` após autenticar a conta e consultar seu catálogo. Consulte
+`GET /v1/models` para obter os IDs disponíveis. Para Qwen, `reasoning_effort: none`
+desativa o raciocínio (padrão); `low`, `medium`, `high`, `xhigh` e `max` ativam o
+modo de pensamento. Essas opções são um controle de ativação, sem garantia de
+intensidades distintas. O orçamento inicial de contexto Qwen é conservador e
+limitado pelo catálogo quando ele informa uma janela menor.
+
+No modo local, execute um provedor por processo. No PowerShell:
+
+```powershell
+# DeepSeek continua sendo o padrão.
+$env:PROVIDER = 'qwen'
+$env:PORT = '3001'
+npm start
+```
+
+O perfil Qwen padrão é `qwen_profile`; `QWEN_PROFILE_DIR` permite alterá-lo.
+`PROVIDER_PROFILE_DIR` tem precedência sobre os diretórios específicos.
+
+O login das contas (DeepSeek e Qwen) acontece **dentro do painel**: rode
+`make live`, abra http://localhost:3440, clique em **Conectar** no card do
+serviço e entre na tela remota que abre no próprio site. No DeepSeek, conclua
+o login manualmente e clique em **Concluir login** quando o chat estiver aberto.
+O navegador de login roda no worker do servidor; sua sessão permanece no volume
+privado da conta e é validada antes de liberar a API. A antiga janela externa
+(`npm run login` / `make login`) foi removida.
+
+O nome público e o pacote agora são Proxy IA / `proxy-ia`. Identificadores
+operacionais `deepsproxy`, variáveis `DEEPSPROXY_*`, chaves `dsp_`, nomes das
+imagens e IDs dos provedores já configurados foram preservados para manter as
+instalações existentes. As seções abaixo descrevem principalmente o adaptador
+DeepSeek e suas políticas atuais.
 
 Para publicar com painel multiusuário, login remoto no DeepSeek e chaves
 individuais, siga o [guia de produção](deploy/README.md). Cada usuário acompanha
@@ -8,7 +105,7 @@ Proxy local compatível com a API OpenAI que roteia requisições para o DeepSee
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-4-green)](https://hono.dev/)
-[![Playwright](https://img.shields.io/badge/Playwright-1.59-blueviolet)](https://playwright.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.64-blueviolet)](https://playwright.dev/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](LICENSE)
 
 ---
@@ -19,7 +116,7 @@ Proxy local compatível com a API OpenAI que roteia requisições para o DeepSee
 - **Tool calling**: parser tolerante de `<tool_call>` em JSON/XML estilo Hermes e conversão de DSML do DeepSeek para `tool_calls`, em stream e non-stream
 - **Entrada compacta**: preserva instruções e contexto útil do cliente, omite raciocínio anterior e envia catálogo de ferramentas em JSON compacto
 - **Pausas internas aleatórias**: uma geração por vez, incluindo resumos e retries. Após conclusão, falha ou cancelamento, sorteia uma nova pausa uniforme de **15 a 30 segundos** antes da próxima geração. Ajuste `DEEPSPROXY_REQUEST_DELAY_MIN_MS` e `DEEPSPROXY_REQUEST_DELAY_MAX_MS` no `.env`. Além disso, cada ação de navegador aguarda **10 a 15 segundos**, configuráveis por `DEEPSPROXY_ACTION_DELAY_MIN_MS` e `DEEPSPROXY_ACTION_DELAY_MAX_MS`. Cada par pode ser desativado com ambos os valores em `0`. As pausas reduzem a frequência das ações; não garantem ausência de bloqueios pelo serviço.
-- **Interrupção após bloqueios**: suspensão e login pendente interrompem tentativas e bloqueiam novos envios antes de navegação ou resumo. A pausa restante e o bloqueio persistem em `<profile>/.generation-state.json`. Para retomar, execute `make login` e conclua a autenticação interativa; a data exibida pelo DeepSeek não dispara retomada automática. HTTP 429 respeita `Retry-After`, mesmo quando exige mais de 30 segundos. `/api/status` informa `deepseek.block`, `deepseek.nextAllowedAt`, `deepseek.busy` e `deepseek.queued`.
+- **Interrupção após bloqueios**: suspensão e login pendente interrompem tentativas e bloqueiam novos envios antes de navegação ou resumo. A pausa restante e o bloqueio persistem em `<profile>/.generation-state.json`. Para retomar, use **Conectar** ou **Reconectar conta** no card do serviço no painel e conclua a autenticação na tela remota; a data exibida pelo DeepSeek não dispara retomada automática. HTTP 429 respeita `Retry-After`, mesmo quando exige mais de 30 segundos. `/api/status` informa `deepseek.block`, `deepseek.nextAllowedAt`, `deepseek.busy` e `deepseek.queued`.
 - **Controle de ferramentas**: respeita `tool_choice`; DSML inválido sem chamadas válidas retorna `invalid_tool_call` (HTTP 502 ou evento de erro SSE), sem executar comandos incompletos. A recuperação XML/Hermes existente permanece compatível.
 - **Streaming SSE** correto, com extração de `reasoning_content` para modelos thinking
 - **Resumo automático de contexto**: preserva decisões e pendências das mensagens antigas, mantém os turnos recentes e usa compressão como fallback
@@ -38,7 +135,6 @@ O resumo é acionado por padrão quando o prompt chega a 72% do limite detectado
 ```
 src/
 ├── index.ts                 # Bootstrap Hono + auth middleware + bind policy
-├── login.ts                 # Sessão headed para login interativo
 ├── routes/
 │   ├── chat.ts              # Orquestração de retry/stream/non-stream
 │   ├── serialization.ts     # OpenAI messages → prompt textual
@@ -71,16 +167,20 @@ cd deepsproxy
 npm install
 npx playwright install chromium
 
-# Fazer login e iniciar o proxy mantendo o navegador aberto
-npm run login
+# Ambiente completo com painel e login das contas (http://localhost:3440)
+make live
 
-# Nos próximos usos, iniciar com a sessão salva
+# Proxy local com a sessão já salva no perfil
 PORT=3000 npm start
 ```
 
 Abra `http://127.0.0.1:3000/` para consultar o status do servidor, a autenticação no DeepSeek e a sessão salva. A página atualiza automaticamente a cada 15 segundos. Se houver `API_KEY`, informe a chave na página para consultar os detalhes.
 
-O comando `npm run login` inicia a API e aguarda o login sem limite de tempo. Após a autenticação, mantém o navegador aberto e usa essa mesma sessão para atender às requisições; não execute outro `npm start` enquanto esse comando estiver ativo. A sessão é salva no perfil local (incluindo cookies, armazenamento local e IndexedDB) e restaurada ao reiniciar. O perfil padrão fica em `deepseek_profile` dentro do projeto, independentemente da pasta de onde o comando é executado. Não apague essa pasta se quiser preservar o login. O DeepSeek ainda pode expirar ou revogar uma sessão; nesse caso, a tela indicará a necessidade de entrar novamente. O login e a API usam o mesmo Chromium e reservam o perfil para evitar uso simultâneo. Para manter o navegador visível também com `npm start`, configure `PLAYWRIGHT_HEADLESS=false`.
+No painel (`make live` ou a instalação de produção), o navegador e a sessão ficam no servidor, em `/profile` no volume exclusivo de cada conta. No DeepSeek, o botão **Concluir login** encerra o navegador manual, abre a mesma sessão na API e só libera as chamadas após confirmar o acesso ao chat. Uma confirmação antecipada mantém o fluxo de login disponível. O computador de quem abre o painel pode ser diferente da máquina que executa os serviços.
+
+O processo independente `npm start` usa seu próprio perfil, por padrão `deepseek_profile` dentro do projeto. Ele não compartilha automaticamente a sessão dos workers Docker. Preserve o perfil para reutilizar cookies, armazenamento local e IndexedDB após reiniciar. O provedor pode expirar ou revogar a sessão. A API reserva o perfil para evitar uso simultâneo; `PLAYWRIGHT_HEADLESS=false` mantém seu navegador local visível.
+
+DeepSeek usa o Chromium padrão do Playwright, sem plugins que alterem as APIs JavaScript ou a identificação do navegador. O idioma do navegador e dos frames de login é `pt-BR`. Qwen mantém sua integração existente com `playwright-extra`. Para usar o Google Chrome instalado no ambiente, configure `PLAYWRIGHT_CHANNEL=chrome`. Os workers Docker incluem Chromium e mantêm esse padrão. A aprovação dos desafios de login depende do provedor.
 
 O proxy fica em `http://127.0.0.1:3000/v1/chat/completions`. Teste com qualquer SDK OpenAI:
 
@@ -119,6 +219,36 @@ DEEPSPROXY_DIAGNOSTICS_FILE=logs/deepsproxy-diagnostic.log
 
 Em workers e testes automatizados o diagnóstico fica desativado por padrão; `DEEPSPROXY_DIAGNOSTICS=1` permite ativá-lo explicitamente. Esta instrumentação preserva a política atual de login, pausas e repetição de chamadas. A causa da perda de login será avaliada após capturar uma ocorrência real.
 
+## Logs do console e da rede do navegador
+
+O DeepSeek e o Qwen registram automaticamente o console de todas as abas,
+erros JavaScript, requisições, respostas HTTP, durações e falhas de rede. Cada
+requisição tem um `networkRequestId` para correlacionar os eventos.
+
+No uso local, os arquivos ficam em `logs/browser-deepseek.log` e
+`logs/browser-qwen.log`. Nos workers Docker, ficam em
+`/profile/browser-diagnostic.log`, no volume persistente de cada conta, e também
+aparecem nos logs do container. Para acompanhar o ambiente local completo:
+
+```powershell
+npm run live:worker-logs
+```
+
+O formato é JSON por linha, com horário UTC, provedor, navegador e aba. Não são
+gravados cabeçalhos nem corpos das requisições ou respostas. Na resposta de
+verificação do hCaptcha, apenas os booleanos `success`/`pass` e códigos de erro
+reconhecidos são extraídos para o evento `browser.captcha_result`; respostas
+do usuário, imagens, dados do desafio e tokens não são gravados. HTTP 200 por
+si só não confirma a aprovação do CAPTCHA. As URLs perdem
+query string, fragmento, credenciais e identificadores reconhecidos. O texto do
+console é limitado a 2.048 caracteres e tem remoção de padrões de credenciais,
+e-mails e campos de conteúdo; argumentos estruturados não são serializados.
+
+Cada arquivo tem limite de 10 MB e três backups. Falhas de gravação não
+interrompem o navegador. Use `DEEPSPROXY_BROWSER_LOG=0` para desativar ou
+`DEEPSPROXY_BROWSER_LOG_FILE` para escolher o arquivo de destino. A captura é
+desativada por padrão nos testes automatizados.
+
 ## Configuracao da extensao Continue
 
 Este repositorio inclui um arquivo pronto para a extensao Continue:
@@ -150,27 +280,27 @@ Linux:   /home/SEU_USUARIO/.continue/config.yaml
 4. Cole o conteudo copiado em `config.yaml`.
 5. Salve o arquivo.
 6. No VS Code, execute `Developer: Reload Window`.
-7. No Continue, selecione `LOCALHOST:3000 - DeepsProxy Flash`.
+7. No Continue, selecione `LOCALHOST:3000 - Proxy IA Flash`.
 
-Use `LOCALHOST:3000 - DeepsProxy Thinking` apenas quando quiser raciocinio explicito. Esse modelo costuma demorar mais para aparecer na extensao porque primeiro envia chunks em `reasoning_content` e depois envia a resposta final em `content`.
+Use `LOCALHOST:3000 - Proxy IA Thinking` apenas quando quiser raciocinio explicito. Esse modelo costuma demorar mais para aparecer na extensao porque primeiro envia chunks em `reasoning_content` e depois envia a resposta final em `content`.
 
-Se o DeepsProxy estiver usando uma porta diferente de `3000`, ajuste `apiBase` no arquivo do Continue. Exemplo para porta `8080`:
+Se o Proxy IA estiver usando uma porta diferente de `3000`, ajuste `apiBase` no arquivo do Continue. Exemplo para porta `8080`:
 
 ```yaml
 apiBase: http://127.0.0.1:8080/v1
 ```
 
-Se voce definiu `API_KEY` no DeepsProxy, troque `apiKey: local` pela mesma chave.
+Se voce definiu `API_KEY` no Proxy IA, troque `apiKey: local` pela mesma chave.
 
 ---
 
 ## Configuração do Zed
 
-O projeto inclui `.zed/settings.json` com o provedor OpenAI compatível `deepsproxy-local`, configurado para `http://127.0.0.1:3000/v1` e os modelos Flash e Thinking. Dependendo da versão do Zed, adicione esse provedor em **Agent: Open Settings → LLM Providers → Add Provider → OpenAI** com nome `deepsproxy-local`, URL `http://127.0.0.1:3000/v1`, IDs `deepseek-v4-flash` e `deepseek-v4-flash-thinking` e janela conservadora de contexto `512000` para Flash e Thinking. O valor `max_tokens` define a janela de contexto do modelo no Zed. O teste pela interface web respondeu com entradas de até 2,56 milhões de caracteres; a entrada de 5,12 milhões foi recusada com aviso de 49% acima do limite. Como o site não expõe a contagem exata de tokens, o projeto usa `512000` como margem conservadora. Para iniciar a API, use o atalho global `Ctrl+Alt+D` ou abra o seletor de tarefas com `Ctrl+Shift+R` e execute `DeepsProxy: Start local API`. A tarefa inicia o servidor em segundo plano ou detecta se ele já está ativo; depois selecione o provedor/modelo no painel Agent. O Zed não oferece um botão de extensão customizado nem inicia tarefas automaticamente ao selecionar um modelo.
+O projeto inclui `.zed/settings.json` com o provedor OpenAI compatível `deepsproxy-local`, configurado para `http://127.0.0.1:3000/v1` e os modelos Flash e Thinking. Dependendo da versão do Zed, adicione esse provedor em **Agent: Open Settings → LLM Providers → Add Provider → OpenAI** com nome `deepsproxy-local`, URL `http://127.0.0.1:3000/v1`, IDs `deepseek-v4-flash` e `deepseek-v4-flash-thinking` e janela conservadora de contexto `512000` para Flash e Thinking. O valor `max_tokens` define a janela de contexto do modelo no Zed. O teste pela interface web respondeu com entradas de até 2,56 milhões de caracteres; a entrada de 5,12 milhões foi recusada com aviso de 49% acima do limite. Como o site não expõe a contagem exata de tokens, o projeto usa `512000` como margem conservadora. Para iniciar a API, use o atalho global `Ctrl+Alt+D` ou abra o seletor de tarefas com `Ctrl+Shift+R` e execute `Proxy IA: Start local API`. A tarefa inicia o servidor em segundo plano ou detecta se ele já está ativo; depois selecione o provedor/modelo no painel Agent. O Zed não oferece um botão de extensão customizado nem inicia tarefas automaticamente ao selecionar um modelo.
 
 O arquivo também define `agent.tool_permissions.default` como `allow`, aprovando automaticamente as ferramentas do Agent Panel neste projeto. Isso reduz os avisos de confirmação; use apenas em um workspace confiável. Essa opção não dá permissões adicionais ao sistema operacional nem configura agentes externos.
 
-Para iniciar o proxy, faça login uma vez com `npm run login` e execute `npm start`. O Zed exige uma credencial para habilitar provedores OpenAI compatíveis, mesmo quando o proxy local não valida chave. Para o provedor `deepsproxy-local`, defina a variável de usuário `DEEPSPROXY_LOCAL_API_KEY=local` ou informe `local` em **Agent: Open Settings → LLM Providers**. Sem `API_KEY` no DeepsProxy, esse valor fictício é aceito pelo proxy, que permanece restrito ao loopback. Se você definir `API_KEY` no DeepsProxy, use essa mesma chave em vez de `local`. Não coloque segredos em `settings.json`.
+Para iniciar o proxy, conecte a conta pelo painel (`make live`) e execute `npm start`. O Zed exige uma credencial para habilitar provedores OpenAI compatíveis, mesmo quando o proxy local não valida chave. Para o provedor `deepsproxy-local`, defina a variável de usuário `DEEPSPROXY_LOCAL_API_KEY=local` ou informe `local` em **Agent: Open Settings → LLM Providers**. Sem `API_KEY` no Proxy IA, esse valor fictício é aceito pelo proxy, que permanece restrito ao loopback. Se você definir `API_KEY` no Proxy IA, use essa mesma chave em vez de `local`. Não coloque segredos em `settings.json`.
 
 A configuração usa o formato `language_models.openai_compatible` documentado pelo Zed para endpoints compatíveis com a API OpenAI.
 
@@ -206,6 +336,7 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `API_KEY` | — | Chave obrigatória se `BIND_HOST` for público |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `PLAYWRIGHT_HEADLESS` | `true` | `false` apenas para debugging |
+| `PLAYWRIGHT_CHANNEL` | `chromium` | `chrome` para usar Google Chrome instalado; vale para DeepSeek e Qwen |
 | `DEEPSEEK_PROFILE_DIR` | `deepseek_profile` | Pasta do perfil persistente do Chromium |
 | `DEEPSPROXY_CHAT_INPUT_TIMEOUT_MS` | `8000` | Tempo limite p/ aparecer o input do chat |
 | `DEEPSPROXY_POW_TIMEOUT_MS` | `30000` | Tempo limite p/ capturar PoW |
@@ -222,13 +353,13 @@ Veja `.env.example` para a lista completa. As mais relevantes:
 | `DEEPSEEK_CLIENT_VERSION` | igual a `APP_VERSION` | Header `x-client-version` |
 | `DEEPSEEK_CLIENT_LOCALE` | `pt_BR` | Header `x-client-locale` |
 | `DEEPSEEK_ACCEPT_LANGUAGE` | `pt-BR,...` | Header `accept-language` |
-| `DEEPSEEK_USER_AGENT` | Chrome 130 desktop | UA do Chromium embarcado |
+| `DEEPSEEK_USER_AGENT` | User agent nativo do Chromium | Sobrescrita opcional do user agent do DeepSeek |
 
 O limite de contexto divulgado por `/v1/models` é configurado ou estimado (`context_limit_source: configured_or_estimated`). O piso de 512 mil tokens do Flash não é uma capacidade comprovada a cada envio. Falhas de rede, autenticação e suspensão não reduzem a estimativa. Em streaming, a telemetria só registra sucesso após concluir o processamento da resposta.
 
-Erros de `/v1/chat/completions` mantêm `error.message`, `error.type` e `error.code` e incluem `error.original_message` (quando disponível), `error.user_action` e `error.help_url` (quando há um site a acessar). A própria `message` contém o erro, a orientação e o link para clientes que exibem apenas esse campo. Suspensões também informam `suspended_until` quando a data foi capturada; limites de frequência incluem `retry_at`. O aviso original da suspensão é preservado após reinício. O login deve ser concluído na janela aberta por `make login`: abrir o site em outro navegador não autentica o perfil do proxy. Falhas depois do início do streaming são enviadas como um evento SSE `data: {"error": ...}`, seguido de `[DONE]`.
+Erros de `/v1/chat/completions` mantêm `error.message`, `error.type` e `error.code` e incluem `error.original_message` (quando disponível), `error.user_action` e `error.help_url` (quando há um site a acessar). A própria `message` contém o erro, a orientação e o link para clientes que exibem apenas esse campo. Suspensões também informam `suspended_until` quando a data foi capturada; limites de frequência incluem `retry_at`. O aviso original da suspensão é preservado após reinício. O login deve ser concluído na tela remota do painel (botão Conectar): abrir o site em outro navegador não autentica o proxy. Falhas depois do início do streaming são enviadas como um evento SSE `data: {"error": ...}`, seguido de `[DONE]`.
 
-Se aparecer `Porta já ocupada`, encerre a outra instância do proxy ou altere `PORT`. `make login` já mantém uma API usando o navegador aberto; não inicie uma segunda instância sobre a mesma porta ou perfil.
+Se aparecer `Porta já ocupada`, encerre a outra instância do proxy ou altere `PORT`; não inicie uma segunda instância sobre a mesma porta ou perfil.
 
 ---
 

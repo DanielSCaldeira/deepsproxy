@@ -29,9 +29,9 @@ test('API exposes original upstream message, instructions and login URL, includi
         assert.equal(error.original_message, message);
         assert.equal(error.help_url, 'https://chat.deepseek.com/');
         assert.ok(error.message.includes(message));
-        assert.match(error.message, /O que fazer:.*make login/);
+        assert.match(error.message, /O que fazer:.*painel do Proxy IA/);
         assert.ok(error.message.includes(error.help_url));
-        assert.match(error.user_action, /janela aberta pelo proxy/);
+        assert.match(error.user_action, /tela remota que abre dentro do site/);
         assert.doesNotMatch(JSON.stringify(error), /DO_NOT_FORWARD/);
       }
       assert.equal(calls, 1);

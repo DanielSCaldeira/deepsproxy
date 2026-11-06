@@ -10,8 +10,8 @@ const signals = new AsyncLocalStorage<AbortSignal>();
 export const generationSignal = () => signals.getStore();
 export const withGenerationSignal = <T>(signal: AbortSignal, fn: () => T): T => signals.run(signal, fn);
 
-export type AccountBlock = { state: 'suspended' | 'login_required'; suspendedUntil?: string | null; originalMessage?: string | null };
-interface SavedGuard { nextAllowedAt: number; block: AccountBlock | null }
+export type AccountBlock = { state: 'suspended' | 'login_required'; authenticated?: boolean; suspendedUntil?: string | null; originalMessage?: string | null };
+interface SavedGuard { nextAllowedAt: number; block: AccountBlock | null; rateLimitUntil?: number }
 
 export class UpstreamError extends Error {
   constructor(message: string, readonly status: number, readonly retryable = false, readonly originalMessage: string | null = null) { super(message); }
@@ -41,6 +41,7 @@ export class GenerationGuard {
     if (file && fs.existsSync(file)) {
       const data = JSON.parse(fs.readFileSync(file, 'utf8')) as SavedGuard;
       if (!Number.isFinite(data.nextAllowedAt) || data.nextAllowedAt < 0 ||
+          (data.rateLimitUntil !== undefined && (!Number.isFinite(data.rateLimitUntil) || data.rateLimitUntil < 0)) ||
           (data.block !== null && !['suspended', 'login_required'].includes(data.block?.state))) {
         throw new Error('Invalid generation guard state; verify the profile before restarting.');
       }
@@ -55,12 +56,13 @@ export class GenerationGuard {
   }
   status() {
     return { block: this.saved.block, nextAllowedAt: this.saved.nextAllowedAt ? new Date(this.saved.nextAllowedAt).toISOString() : null,
+      ...(this.saved.rateLimitUntil && this.saved.rateLimitUntil > this.now() ? { rateLimitUntil: new Date(this.saved.rateLimitUntil).toISOString() } : {}),
       busy: this.active, queued: this.waiters.length };
   }
   assertAllowed() {
     if (this.saved.block) throw new UpstreamError(this.saved.block.state === 'suspended'
-      ? 'DeepSeek account is suspended; interactive login validation is required.'
-      : 'DeepSeek login is required; interactive login validation is required.', this.saved.block.state === 'suspended' ? 403 : 401,
+      ? `${process.env.PROVIDER === 'grok' ? 'Grok' : process.env.PROVIDER === 'claude' ? 'Claude' : process.env.PROVIDER === 'perplexity' ? 'Perplexity' : process.env.PROVIDER === 'cohere' ? 'Cohere' : process.env.PROVIDER === 'ernie' ? 'Ernie' : process.env.PROVIDER === 'gemini' ? 'Gemini' : process.env.PROVIDER === 'copilot' ? 'Copilot' : process.env.PROVIDER === 'kimi' ? 'Kimi' : process.env.PROVIDER === 'mistral' ? 'Mistral' : process.env.PROVIDER === 'quillbot' ? 'QuillBot' : process.env.PROVIDER === 'meta' ? 'Meta AI' : process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} account is suspended; interactive login validation is required.`
+      : `${process.env.PROVIDER === 'grok' ? 'Grok' : process.env.PROVIDER === 'claude' ? 'Claude' : process.env.PROVIDER === 'perplexity' ? 'Perplexity' : process.env.PROVIDER === 'cohere' ? 'Cohere' : process.env.PROVIDER === 'ernie' ? 'Ernie' : process.env.PROVIDER === 'gemini' ? 'Gemini' : process.env.PROVIDER === 'copilot' ? 'Copilot' : process.env.PROVIDER === 'kimi' ? 'Kimi' : process.env.PROVIDER === 'mistral' ? 'Mistral' : process.env.PROVIDER === 'quillbot' ? 'QuillBot' : process.env.PROVIDER === 'meta' ? 'Meta AI' : process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} login is required; interactive login validation is required.`, this.saved.block.state === 'suspended' ? 403 : 401,
       false, this.saved.block.originalMessage ?? null);
   }
   block(block: AccountBlock) {
@@ -75,8 +77,9 @@ export class GenerationGuard {
     }
   }
   confirmInteractiveLogin() { this.saved.block = null; this.persist(); }
-  defer(ms: number) {
+  defer(ms: number, reason?: 'rate_limit') {
     this.saved.nextAllowedAt = Math.max(this.saved.nextAllowedAt, this.now() + ms);
+    if (reason === 'rate_limit') this.saved.rateLimitUntil = Math.max(this.saved.rateLimitUntil ?? 0, this.now() + ms);
     this.persist();
   }
   private unlock() {

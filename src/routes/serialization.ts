@@ -83,7 +83,7 @@ export function appendToolInstructions(systemPrompt: string, body: OpenAIRequest
   const toolsJson = JSON.stringify(formattedTools);
 
   let next = systemPrompt;
-  next += `\n\nTools: ${toolsJson}\nTo call a listed tool, output <tool_call>{"name":"tool_name","arguments":{}}</tool_call> with arguments matching its schema. For multiple calls, repeat the block. Stop after the calls and wait for tool results.\n`;
+  next += `\n\nTools: ${toolsJson}\nThe IDE client executes these tools. To call a listed tool, output <tool_call>{"name":"tool_name","arguments":{}}</tool_call> with schema-valid arguments. Repeat blocks for multiple calls, then stop and wait for tool results.\n`;
 
   if (body.tool_choice === 'required') {
     next += 'Call at least one listed tool in this response.\n';

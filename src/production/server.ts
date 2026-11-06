@@ -55,6 +55,15 @@ const timer = setInterval(()=> {
   void gateway.tick().catch(()=>console.error('[gateway] browser supervision failed')).finally(()=> { ticking=false; });
 },5000);
 const cleanup = setInterval(()=> { void db.query("DELETE FROM sessions WHERE expires_at<now(); DELETE FROM links WHERE expires_at<now()-interval '7 days'; DELETE FROM operations WHERE created_at<now()-interval '30 days'; DELETE FROM audit WHERE created_at<now()-interval '90 days'").catch(()=>{}); },3600_000);
-const stop = () => { clearInterval(timer); clearInterval(cleanup); for(const ws of sockets.clients) ws.terminate(); server.close(()=> { void db.end().then(()=>process.exit(0)); }); };
+let stopping = false;
+const stop = () => {
+  if (stopping) return; stopping = true;
+  gateway.beginDrain(); clearInterval(timer); clearInterval(cleanup);
+  for (const ws of sockets.clients) ws.terminate();
+  workers.cancelAllLogins();
+  const deadline = setTimeout(() => { gateway.abortActive(); if ('closeAllConnections' in server) server.closeAllConnections(); }, 150_000);
+  deadline.unref();
+  server.close(() => { clearTimeout(deadline); void db.end().then(() => process.exit(0)); });
+};
 process.once('SIGTERM',stop); process.once('SIGINT',stop);
-console.info('[gateway] Production gateway listening');
+console.info(`[Proxy IA] Production gateway listening on port ${Number(process.env.PORT || 3000)} — acesso: ${config.origin}`);

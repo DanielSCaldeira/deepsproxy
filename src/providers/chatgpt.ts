@@ -1,0 +1,316 @@
+import type { BrowserContext, Page } from 'playwright';
+import { setTimeout as delay } from 'node:timers/promises';
+import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
+import { InteractiveBrowser } from '../services/interactive-browser.ts';
+import { getGenerationGuard, retryAfterMilliseconds, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
+import { pauseBeforeProviderAction } from '../services/action-pacing.ts';
+import { Mutex } from '../utils/mutex.ts';
+import type { ProviderAdapter, ProviderEvent, ProviderModel, ProviderStatus } from './types.ts';
+import { installChatGPTCapture } from './chatgpt-browser.ts';
+import { chatGPTError, chatGPTModels, parseChatGPTStream } from './chatgpt-protocol.ts';
+
+const ORIGIN = 'https://chatgpt.com';
+// The current composer hydrates from #pending-home-input into an ID-less
+// ProseMirror textbox. Keep the older editor for existing frontend versions.
+const EDITOR = '#prompt-textarea:visible, form[data-chatgpt-composer] [contenteditable="true"][role="textbox"]:visible';
+const MODEL_BUTTON = '[data-testid="model-switcher-dropdown-button"], [data-testid="model-selector"]';
+const SEND = '[data-testid="send-button"]:visible, button[aria-label="Send prompt"]:visible, button[aria-label="Enviar prompt"]:visible, form[data-chatgpt-composer] button[type="submit"][aria-label="Enviar"]:visible, form[data-chatgpt-composer] button[type="submit"][aria-label="Send"]:visible';
+const STOP = '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Parar de gerar"]';
+
+/** One account per worker. The website prepares and sends its own requests. */
+export class ChatGPTProvider implements ProviderAdapter {
+  readonly id = 'chatgpt' as const;
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private initialization?: Promise<void>;
+  private unlock?: () => Promise<void>;
+  private readonly directory = getProfileDirectory();
+  private readonly session = createSessionStore(this.directory);
+  private readonly guard = getGenerationGuard();
+  private readonly loginMutex = new Mutex();
+  private readonly pageMutex = new Mutex();
+  private interactive?: InteractiveBrowser;
+  private manualLogin = false;
+  private transitioning = false;
+  private authenticated = false;
+  private checkedAt: string | null = null;
+  private state: ProviderStatus['state'] = 'not_initialized';
+  private catalog: Array<ProviderModel & { label: string }> = [];
+  private availableModels: ProviderModel[] = [];
+  private active = new Set<AbortController>();
+
+  initialize(headless = true): Promise<void> {
+    if (this.manualLogin || this.transitioning) return Promise.resolve();
+    if (this.context && this.page && !this.page.isClosed()) return Promise.resolve();
+    return this.initialization ??= this.launch(headless).catch(error => { this.initialization = undefined; throw error; });
+  }
+  private async launch(headless: boolean, restore = true): Promise<void> {
+    this.unlock = await this.session.lockProfile();
+    try {
+      await pauseBeforeProviderAction('open-browser');
+      const worker = process.env.APP_MODE === 'worker';
+      const context = await nativeChromium.launchPersistentContext(this.directory, {
+        channel: getBrowserChannel(), headless, locale: BROWSER_LOCALE,
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: ['--lang=pt-BR', '--disable-field-trial-config', '--password-store=basic', '--disable-dev-shm-usage',
+          ...(worker ? ['--disable-quic', '--proxy-bypass-list=<-loopback>'] : [])],
+        ...(worker ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
+      });
+      this.context = context;
+      if (restore) await this.session.restoreSession(context);
+      await context.addInitScript(installChatGPTCapture);
+      context.on('response', response => {
+        const url = new URL(response.url());
+        if (url.origin !== ORIGIN || !/^\/backend-api\/models\/?$/.test(url.pathname) || !response.ok()) return;
+        void response.json().then(body => { if (this.context === context) this.catalog = chatGPTModels(body); }).catch(() => {});
+      });
+      context.on('close', () => {
+        if (this.context !== context) return;
+        this.context = null; this.page = null; this.initialization = undefined;
+        this.authenticated = false; this.state = 'not_initialized'; this.catalog = [];
+        for (const controller of this.active) controller.abort();
+        const unlock = this.unlock; this.unlock = undefined; void unlock?.();
+      });
+      this.page = await createBrowserPage(context);
+      await this.navigate();
+    } catch (error) { await this.closeAutomation(); throw error; }
+  }
+  private async navigate(): Promise<void> {
+    if (!this.page) throw new UpstreamError('ChatGPT browser unavailable.', 503);
+    await pauseBeforeProviderAction('open-chat');
+    await this.page.goto(ORIGIN + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  }
+  getActivePage() { return this.page; }
+  isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }
+
+  async connect(interactive = true): Promise<void> {
+    if (process.env.APP_MODE !== 'worker' || !interactive) {
+      await this.initialize(false); await this.navigate(); return;
+    }
+    return this.loginMutex.withLock(async () => {
+      if (this.manualLogin && this.interactive?.running) return;
+      this.transitioning = true;
+      try {
+        await this.closeAutomation();
+        this.interactive ??= new InteractiveBrowser(this.directory, ORIGIN + '/');
+        await this.interactive.start(); this.manualLogin = true;
+      } finally { this.transitioning = false; }
+    });
+  }
+  private async validate(): Promise<void> {
+    if (!this.page || new URL(this.page.url()).origin !== ORIGIN) throw new UpstreamError('ChatGPT login is required.', 401);
+    // Auth endpoint observed in the website's own frontend. Return no token or identity.
+    const result = await this.page.evaluate(async () => {
+      const response = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) return { status: response.status, authenticated: false };
+      const body = await response.json();
+      return { status: response.status, authenticated: typeof body?.user?.id === 'string' && !!body.user.id &&
+        typeof body?.accessToken === 'string' && !!body.accessToken && (!body.expires || Date.parse(body.expires) > Date.now()) };
+    });
+    this.checkedAt = new Date().toISOString();
+    if (result.status !== 200 && result.status !== 401) { this.state = 'unavailable'; throw chatGPTError(result.status); }
+    this.authenticated = result.authenticated;
+    if (!this.authenticated) {
+      this.state = 'login_required'; this.catalog = [];
+      throw new UpstreamError('ChatGPT login is required; complete login in the browser.', 401);
+    }
+    this.state = (this.guard.status().block?.state === 'suspended' ? 'suspended' : undefined) ??
+      (this.guard.status().rateLimitUntil ? 'rate_limited' : 'authenticated');
+  }
+  async confirmLogin(interactive = false): Promise<void> {
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('ChatGPT login is required. Clique em Concluir login.', 401);
+    await this.validate();
+    await this.session.saveSession(this.context!);
+    if (interactive && this.state !== 'suspended') this.guard.confirmInteractiveLogin();
+  }
+  async finishLogin(): Promise<void> {
+    return this.loginMutex.withLock(async () => {
+      if (!this.manualLogin) return this.confirmLogin(true);
+      this.transitioning = true;
+      try {
+        await this.interactive!.close();
+        await this.launch(false, false);
+        await this.validate();
+        await this.session.saveSession(this.context!);
+        // Authentication alone never clears a known suspension.
+        if (this.guard.status().block?.state !== 'suspended') this.guard.confirmInteractiveLogin();
+        this.manualLogin = false;
+      } catch (error) {
+        await this.closeAutomation();
+        if (!this.interactive!.running) await this.interactive!.start();
+        throw new UpstreamError('ChatGPT login is required. Conclua o acesso ao chat e clique em Concluir login novamente.', 401);
+      } finally { this.transitioning = false; }
+    });
+  }
+  async status(): Promise<ProviderStatus> {
+    if (this.manualLogin || this.transitioning) return { state: 'login_required', authenticated: false,
+      sessionSaved: await this.session.hasSavedSession(), checkedAt: this.checkedAt, confirmationRequired: true };
+    if (this.page && !this.guard.status().busy && (!this.checkedAt || Date.now() - Date.parse(this.checkedAt) > 15000)) {
+      try { await this.validate(); }
+      catch (error) { this.state = error instanceof UpstreamError && error.status === 401 ? 'login_required' : 'unavailable'; }
+    }
+    return { ...this.guard.status(), state: this.guard.status().block?.state ?? this.state, authenticated: this.authenticated,
+      sessionSaved: await this.session.hasSavedSession(), checkedAt: this.checkedAt,
+      originalMessage: this.state === 'rate_limited' ? 'Limite de uso do ChatGPT atingido.' : null };
+  }
+  private async selectableModels(): Promise<ProviderModel[]> {
+    if (!this.page) return [];
+    const button = this.page.locator(MODEL_BUTTON).first();
+    const automatic = { id: 'chatgpt/auto', contextLength: 0 };
+    if (!await button.isVisible()) return [automatic];
+    await button.click({ timeout: 5000 });
+    try {
+      const items = this.page.getByRole('menuitem').or(this.page.getByRole('menuitemradio'));
+      const labels = await items.allTextContents();
+      const auto = labels.some(text => /^(Auto|Automático|Automatic)$/i.test(text.trim())) ||
+        /^(ChatGPT|Auto|Automático|Automatic)$/i.test((await button.innerText()).trim());
+      return [...(auto ? [automatic] : []), ...this.catalog.filter(m => m.id !== 'chatgpt/auto' && labels.some(text => text.trim() === m.label))];
+    } finally { await this.page.keyboard.press('Escape'); }
+  }
+  async models(): Promise<ProviderModel[]> {
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('ChatGPT login is required.', 401);
+    // Do not query auth or operate menus while a generation owns the page.
+    if (this.guard.status().busy) return this.availableModels;
+    return this.pageMutex.withLock(async () => {
+      if (this.guard.status().busy) return this.availableModels;
+      await this.validate();
+      this.availableModels = await this.selectableModels();
+      return this.availableModels;
+    });
+  }
+  private async selectModel(model: string): Promise<void> {
+    const page = this.page!;
+    const button = page.locator(MODEL_BUTTON).first();
+    if (!await button.isVisible()) {
+      if (model !== 'chatgpt/auto') throw new UpstreamError('ChatGPT model selection unavailable.', 400);
+      return;
+    }
+    await button.click({ timeout: 5000 });
+    const label = model === 'chatgpt/auto' ? /^(Auto|Automático|Automatic)$/i : this.catalog.find(m => m.id === model)?.label;
+    if (!label) { await page.keyboard.press('Escape'); throw new UpstreamError('Unknown ChatGPT model.', 400); }
+    const option = page.getByRole('menuitem', { name: label, exact: true }).or(page.getByRole('menuitemradio', { name: label, exact: true })).first();
+    if (!await option.isVisible()) {
+      await page.keyboard.press('Escape');
+      if (model === 'chatgpt/auto' && /^(ChatGPT|Auto|Automático|Automatic)$/i.test((await button.innerText()).trim())) return;
+      throw new UpstreamError('Requested ChatGPT model is not selectable on this account.', 400);
+    }
+    await option.click({ timeout: 5000 });
+  }
+  private rememberError(error: unknown, retryAfter?: string | null): void {
+    if (!(error instanceof UpstreamError)) return;
+    if (error.status === 401) { this.authenticated = false; this.state = 'login_required'; this.guard.block({ state: 'login_required' }); }
+    else if (/account is suspended/.test(error.message)) { this.state = 'suspended'; this.guard.block({ state: 'suspended', authenticated: this.authenticated }); }
+    else if (error.status === 429) { this.state = 'rate_limited'; this.guard.defer(Math.max(60_000, retryAfterMilliseconds(retryAfter ?? null)), 'rate_limit'); }
+    else this.state = 'unavailable';
+  }
+  async generate(prompt: string, model: string, _thinking: boolean, signal?: AbortSignal): Promise<AsyncIterable<ProviderEvent>> {
+    if (!model.startsWith('chatgpt/') || this.manualLogin || this.transitioning)
+      throw new UpstreamError('ChatGPT model unavailable or login is required.', this.manualLogin ? 401 : 400);
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal?.reason);
+    signal?.addEventListener('abort', abort, { once: true });
+    this.active.add(controller);
+    let release: (() => void) | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+    let cleaned = false, setupDone = false;
+    let interaction = 'initialization';
+    const page = this.page;
+    const cancelCapture = async () => {
+      if (!page || page.isClosed()) return;
+      const stop = page.locator(STOP).first();
+      if (await stop.isVisible().catch(() => false)) await stop.click({ timeout: 2000 }).catch(() => {});
+      await page.evaluate(() => {
+        const scope = globalThis as any;
+        scope.__proxyChatGPT?.controller?.abort(); delete scope.__proxyChatGPT;
+      }).catch(() => {});
+    };
+    const cleanup = async () => {
+      if (cleaned) return; cleaned = true;
+      clearTimeout(timer); signal?.removeEventListener('abort', abort); this.active.delete(controller);
+      try { await cancelCapture(); } finally { release?.(); }
+    };
+    controller.signal.addEventListener('abort', () => { if (setupDone) void cleanup(); else void cancelCapture(); }, { once: true });
+    try {
+      release = await this.guard.acquire(controller.signal);
+      timer = setTimeout(() => controller.abort(new UpstreamError('ChatGPT generation timed out.', 504)), 180_000);
+      await this.pageMutex.withLock(() => withGenerationSignal(controller.signal, async () => {
+        controller.signal.throwIfAborted(); interaction = 'authentication'; await this.validate();
+        interaction = 'opening chat'; await this.navigate();
+        // Focus the server-rendered input as a person would, then reacquire the
+        // editor after hydration replaces it. Never fill a detached placeholder.
+        interaction = 'focusing editor';
+        await page!.locator(EDITOR + ', #pending-home-input:visible').first().click({ timeout: 20_000 });
+        const editor = page!.locator(EDITOR).first();
+        interaction = 'waiting for editor';
+        await editor.waitFor({ state: 'visible', timeout: 30_000 });
+        if (new URL(page!.url()).pathname !== '/') throw new UpstreamError('ChatGPT did not open a new conversation.', 502);
+        interaction = 'selecting model'; await this.selectModel(model); controller.signal.throwIfAborted();
+        await pauseBeforeProviderAction('send-message');
+        await page!.evaluate(({ prompt, model }) => {
+          (globalThis as any).__proxyChatGPT = { prompt, model, chunks: [], bytes: 0, claimed: false, done: false };
+        }, { prompt, model: model.slice('chatgpt/'.length) });
+        interaction = 'filling editor'; await editor.fill(prompt, { timeout: 10_000 });
+        controller.signal.throwIfAborted();
+        interaction = 'clicking send';
+        // The site navigates to /c/... after submission. Capture owns completion;
+        // do not time out an already-dispatched message waiting for navigation.
+        await page!.locator(SEND).first().click({ timeout: 10_000, noWaitAfter: true });
+        controller.signal.throwIfAborted();
+      }));
+      setupDone = true;
+      controller.signal.throwIfAborted();
+      const self = this;
+      const claimDeadline = Date.now() + 30_000;
+      const chunks = (async function* () {
+        while (true) {
+          controller.signal.throwIfAborted();
+          const part = await page!.evaluate(() => {
+            const c = (globalThis as any).__proxyChatGPT;
+            if (!c) throw new Error('ChatGPT capture unavailable.');
+            const chunks: string[] = c.chunks.splice(0); c.bytes = 0;
+            return { chunks, claimed: !!c.claimed, done: !!c.done, error: c.error as string | undefined,
+              status: c.status as number | undefined, code: c.code as string | undefined, retryAfter: c.retryAfter as string | null };
+          });
+          if (!part.claimed && Date.now() > claimDeadline)
+            throw new UpstreamError('ChatGPT did not send a supported conversation request; verify the browser.', 502);
+          if (part.error) {
+            const error = part.error === 'model_mismatch' ? new UpstreamError('ChatGPT did not honor the requested model.', 400) : chatGPTError(part.status ?? 502, part.code);
+            self.rememberError(error, part.retryAfter); throw error;
+          }
+          for (const chunk of part.chunks) yield chunk;
+          if (part.done) return;
+          await delay(100, undefined, { signal: controller.signal });
+        }
+      })();
+      return (async function* () {
+        try { yield* parseChatGPTStream(chunks, controller.signal); }
+        catch (error) {
+          self.rememberError(error);
+          if (controller.signal.aborted) throw controller.signal.reason;
+          if (error instanceof UpstreamError) throw error;
+          throw new UpstreamError('ChatGPT web stream unavailable; verify the browser before retrying.', 502);
+        }
+        finally { await cleanup(); }
+      })();
+    } catch (error) {
+      this.rememberError(error); await cleanup();
+      if (controller.signal.aborted) throw controller.signal.reason;
+      if (error instanceof UpstreamError) throw error;
+      throw new UpstreamError(`ChatGPT web interaction failed during ${interaction}; verify the browser before retrying.`, 502);
+    }
+  }
+  private async closeAutomation(): Promise<void> {
+    for (const controller of this.active) controller.abort();
+    const context = this.context;
+    // The close event may not race a later launch's profile reservation.
+    this.context = null; this.page = null; this.initialization = undefined; this.catalog = []; this.authenticated = false;
+    try { await context?.close(); }
+    finally { const unlock = this.unlock; this.unlock = undefined; await unlock?.(); this.state = 'not_initialized'; }
+  }
+  async close(): Promise<void> {
+    return this.loginMutex.withLock(async () => {
+      await this.interactive?.close(); this.manualLogin = false; await this.closeAutomation();
+    });
+  }
+}

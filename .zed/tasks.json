@@ -1,6 +1,6 @@
 [
   {
-    "label": "DeepsProxy: Start local API",
+    "label": "Proxy IA: Start local API",
         "tags": ["deepsproxy"],
     "command": "node",
     "args": ["scripts/start-local-api.js"],

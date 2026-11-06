@@ -9,10 +9,10 @@ const actionableErrorFields = {
 export const openApiSpec = {
   openapi: '3.0.0',
   info: {
-    title: 'DeepSproxy API',
+    title: 'Proxy IA API',
     version: '1.0.0',
     description:
-      'OpenAI-compatible proxy for DeepSeek models via browser automation. ' +
+      'OpenAI-compatible proxy for DeepSeek, Qwen, ChatGPT, Claude, Gemini, Copilot, Mistral, Grok, Meta AI, Cohere, Perplexity, Kimi, QuillBot and Ernie web models via browser automation. ' +
       'Supports streaming, tool calling, and thinking models.',
   },
   servers: [{ url: '/' }],
@@ -52,7 +52,7 @@ export const openApiSpec = {
           max_context_tokens: { type: 'integer', example: 65536 },
           max_input_tokens: { type: 'integer', example: 65536 },
           max_output_tokens: { type: 'integer', example: 8000 },
-          context_limit_source: { type: 'string', enum: ['configured_or_estimated'] },
+          context_limit_source: { type: 'string', enum: ['configured_or_estimated', 'unknown'] },
         },
       },
       Message: {

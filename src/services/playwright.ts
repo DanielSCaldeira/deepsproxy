@@ -1,4 +1,5 @@
-import { chromium, BrowserContext, Page, Request } from 'playwright';
+import type { BrowserContext, Page, Request } from 'playwright';
+import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from './browser.ts';
 import { randomUUID } from 'node:crypto';
 import { diagnostic, diagnosticContext, diagnosticError, diagnosticRoute, type DiagnosticContext } from '../utils/diagnostics.ts';
 import { getProfileDirectory, hasSavedSession, restoreSession, saveSession, lockProfile, isProfileInUse } from './session-store.ts';
@@ -11,13 +12,14 @@ const log = createLogger('playwright');
 
 let context: BrowserContext | null = null;
 let activePage: Page | null = null;
+let profileRelease: (() => Promise<void>) | null = null;
 
 const sessionMutex = new Mutex();
 const lifecycleMutex = new Mutex();
 const CHAT_INPUT_SELECTOR = 'textarea:visible, [role="textbox"]:visible, [contenteditable="true"]:visible';
 
 type SessionState = 'not_initialized' | 'authenticated' | 'login_required' | 'suspended' | 'unavailable';
-let sessionStatus: { state: SessionState; checkedAt: string | null; suspendedUntil?: string | null; originalMessage?: string | null } = {
+let sessionStatus: { state: SessionState; checkedAt: string | null; authenticated?: boolean; suspendedUntil?: string | null; originalMessage?: string | null } = {
   state: 'not_initialized', checkedAt: null,
 };
 let lastSavedAt = 0;
@@ -26,7 +28,7 @@ let browserTrace: DiagnosticContext | undefined;
 
 function updateSession(next: typeof sessionStatus, reason: string): void {
   if (next.state === 'suspended' || next.state === 'login_required') {
-    getGenerationGuard().block({ state: next.state, suspendedUntil: next.suspendedUntil, originalMessage: next.originalMessage });
+    getGenerationGuard().block({ state: next.state, ...(next.authenticated === undefined ? {} : { authenticated: next.authenticated }), suspendedUntil: next.suspendedUntil, originalMessage: next.originalMessage });
   }
   if (next.state !== sessionStatus.state) {
     diagnostic('session.transition', { previousState: sessionStatus.state, state: next.state, reason }, browserTrace ?? diagnosticContext());
@@ -74,16 +76,10 @@ export interface HeaderCaptureResult {
   parentMessageId: number | null;
 }
 
-const DEFAULT_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
-
 const DEFAULT_LAUNCH_ARGS = [
-  '--disable-blink-features=AutomationControlled',
-  '--exclude-switches=enable-automation',
-  '--disable-infobars',
+  `--lang=${BROWSER_LOCALE}`,
   '--no-sandbox',
   '--disable-dev-shm-usage',
-  '--disable-gpu',
 ];
 
 export function getActivePage(): Page | null {
@@ -95,41 +91,52 @@ export async function openDeepSeekChat(page: Page, timeout?: number): Promise<vo
   await page.goto('https://chat.deepseek.com/', { waitUntil: 'domcontentloaded', ...(timeout === undefined ? {} : { timeout }) });
 }
 
-export async function waitForAuthenticatedChat(page: Page): Promise<void> {
+function isChatRoute(page: Page): boolean {
+  const url = new URL(page.url());
+  return url.hostname === 'chat.deepseek.com' && !/sign_in|login/.test(url.pathname);
+}
+
+export async function waitForAuthenticatedChat(page: Page, options: { allowSuspended?: boolean; timeoutMs?: number } = {}): Promise<void> {
+  const deadline = options.timeoutMs === undefined ? Infinity : Date.now() + options.timeoutMs;
   while (!page.isClosed()) {
     const state = await inspectPageState(page);
     if (state.suspended) {
       updateSession({ state: 'suspended', checkedAt: new Date().toISOString(), suspendedUntil: state.suspendedUntil, originalMessage: state.suspensionOriginal }, 'suspension_signal');
+      if (options.allowSuspended && isChatRoute(page)) return;
       throw new UpstreamError('DeepSeek account is suspended; interactive login could not be confirmed.', 403);
     }
-    const url = new URL(page.url());
-    if (url.hostname === 'chat.deepseek.com' && !/sign_in|login/.test(url.pathname) &&
+    if (isChatRoute(page) &&
         await page.locator(CHAT_INPUT_SELECTOR).first().isVisible()) return;
+    if (Date.now() >= deadline) throw new Error('A autenticação ainda não foi confirmada; mantenha o navegador aberto.');
     await page.waitForTimeout(250);
   }
   throw new Error('A janela de login foi fechada antes da confirmação.');
 }
 
-export async function initPlaywright(headless = true): Promise<void> {
-  return lifecycleMutex.withLock(() => initializeBrowser(headless));
+export async function initPlaywright(headless = true, options: { restoreSavedSession?: boolean } = {}): Promise<void> {
+  return lifecycleMutex.withLock(() => initializeBrowser(headless, options.restoreSavedSession !== false));
 }
 
-async function initializeBrowser(headless: boolean): Promise<void> {
+async function initializeBrowser(headless: boolean, restoreSavedSession: boolean): Promise<void> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) return;
 
   const profilePath = getProfileDirectory();
-  const userAgent = process.env.DEEPSEEK_USER_AGENT || DEFAULT_USER_AGENT;
+  const userAgent = process.env.DEEPSEEK_USER_AGENT || undefined;
 
   log.info('Launching persistent context', { profilePath, headless });
   diagnostic('browser.launch', { headless });
 
-  const unlock = await lockProfile();
+  const release = await lockProfile();
+  let released: Promise<void> | undefined;
+  const unlock = () => released ??= release();
   try {
     await pauseBeforeDeepSeekAction('open-browser');
-    context = await chromium.launchPersistentContext(profilePath, {
-      channel: 'chromium',
+    // Keep native browser APIs and identification for interactive sign-in.
+    context = await nativeChromium.launchPersistentContext(profilePath, {
+      channel: getBrowserChannel(),
       headless,
+      locale: BROWSER_LOCALE,
       userAgent,
       args: process.env.APP_MODE === 'worker' ? DEFAULT_LAUNCH_ARGS.filter(arg => arg !== '--no-sandbox').concat(['--disable-quic', '--proxy-bypass-list=<-loopback>']) : DEFAULT_LAUNCH_ARGS,
       ...(process.env.APP_MODE === 'worker' ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
@@ -139,17 +146,16 @@ async function initializeBrowser(headless: boolean): Promise<void> {
     await unlock();
     throw error;
   }
+  profileRelease = unlock;
 
   try {
-    const restored = await restoreSession(context);
+    const restored = restoreSavedSession && await restoreSession(context);
     diagnostic('session.restore', { outcome: restored ? 'ok' : 'missing' });
     if (restored) log.info('Restored saved DeepSeek session');
   } catch (error) {
     diagnostic('session.restore', { outcome: 'failed', category: diagnosticError(error) });
     log.warn('Could not restore session snapshot; using the persistent browser profile');
   }
-  // Chromium already opens a blank tab; reuse it instead of opening another.
-  activePage = context.pages().find(page => page.url() === 'about:blank') || await context.newPage();
   closeRequested = false;
   const browserId = randomUUID();
   diagnostic('browser.opened', { browserId, headless });
@@ -158,22 +164,40 @@ async function initializeBrowser(headless: boolean): Promise<void> {
   context.on('close', () => {
     diagnostic('browser.closed', { browserId, requested: closeRequested });
     void unlock();
+    if (profileRelease === unlock) profileRelease = null;
     context = null;
     activePage = null;
     updateSession({ state: 'not_initialized', checkedAt: null }, 'browser_closed');
   });
+  try {
+    activePage = await createBrowserPage(context);
+  } catch (error) {
+    await context?.close();
+    await unlock();
+    throw error;
+  }
 }
 
-export async function saveAuthenticatedSession(interactive = false): Promise<void> {
+export async function saveAuthenticatedSession(interactive = false, options: { allowSuspended?: boolean } = {}): Promise<void> {
   try {
     if (!interactive) getGenerationGuard().assertAllowed();
     if (!context || !activePage) throw new Error('O navegador da sessão não está disponível.');
     const state = await inspectPageState(activePage);
     if (state.suspended) {
       updateSession({ state: 'suspended', checkedAt: new Date().toISOString(), suspendedUntil: state.suspendedUntil, originalMessage: state.suspensionOriginal }, 'suspension_signal');
+      // A provider restriction does not invalidate a completed web login.
+      // Only explicit confirmation on the provider's chat may save it, and
+      // the generation guard must continue rejecting requests.
+      if (interactive && options.allowSuspended && isChatRoute(activePage)) {
+        await saveSession(context);
+        lastSavedAt = Date.now();
+        updateSession({ state: 'suspended', authenticated: true, checkedAt: new Date().toISOString(), suspendedUntil: state.suspendedUntil, originalMessage: state.suspensionOriginal }, 'restricted_snapshot_saved');
+        diagnostic('session.save', { outcome: 'ok', state: 'suspended' });
+        return;
+      }
       throw new UpstreamError('DeepSeek account is suspended; login could not be confirmed.', 403);
     }
-    if (new URL(activePage.url()).hostname !== 'chat.deepseek.com' || /sign_in|login/.test(new URL(activePage.url()).pathname) ||
+    if (!isChatRoute(activePage) ||
         !await activePage.locator(CHAT_INPUT_SELECTOR).first().isVisible()) {
       throw new Error('A autenticação ainda não foi confirmada; mantenha o navegador aberto.');
     }
@@ -210,6 +234,7 @@ export async function getSessionStatus() {
   return {
     ...sessionStatus,
     ...(guard.status().block ?? {}),
+    authenticated: guard.status().block ? guard.status().block?.authenticated === true : sessionStatus.state === 'authenticated',
     busy: guard.status().busy || sessionMutex.queueDepth > 0,
     block: guard.status().block,
     nextAllowedAt: guard.status().nextAllowedAt,
@@ -227,9 +252,11 @@ export function classifySessionError(message: string): SessionState {
 export async function closePlaywright(): Promise<void> {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) {
+    const release = profileRelease;
     closeRequested = true;
     diagnostic('browser.close_requested');
     await context.close();
+    await release?.();
     context = null;
     activePage = null;
   }
@@ -257,12 +284,13 @@ async function inspectPageState(page: Page): Promise<PageState> {
       const editor = Array.from(document.querySelectorAll('textarea, [role="textbox"], [contenteditable="true"]'))
         .some(node => (node as HTMLElement).getClientRects().length > 0);
       const text = editor ? notices : fullBodyText;
-      const suspensionMatch = text.match(/(?:account (?:has been|is) suspended until|conta foi suspensa até)\s+([^\n]+?)(?:\.(?:\s|$)|\n|$)/i);
-      const original = text.match(/(?:Due to violation of user policies|Devido à violação das políticas do usuário|(?:your )?account (?:has been|is) suspended|(?:sua )?conta foi suspensa)[^\n]*/i)?.[0];
+      const restriction = /suspended until|violation of user policies|account (?:has been|is) (?:suspended|blocked|banned|disabled)|conta (?:foi |está |esta )?(?:suspensa|bloqueada|banida|desativada)|violação das políticas do usuário/i;
+      const suspensionMatch = text.match(/(?:account (?:has been|is) (?:suspended|blocked|banned) until|conta (?:foi |está |esta )?(?:suspensa|bloqueada|banida) até)\s+([^\n]+?)(?:\.(?:\s|$)|\n|$)/i);
+      const original = text.split('\n').filter(line => restriction.test(line)).join('\n');
       return {
         url: location.href,
         title: document.title,
-        suspended: /suspended until|violation of user policies|account (?:has been|is) suspended|conta foi suspensa|violação das políticas do usuário/i.test(text),
+        suspended: restriction.test(text),
         suspendedUntil: suspensionMatch?.[1]?.trim() || null,
         suspensionOriginal: original?.trim().slice(0, 4096) || null,
         loginRequired: /log in|login|sign in|entrar/i.test(fullBodyText),

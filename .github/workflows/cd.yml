@@ -193,6 +193,18 @@ jobs:
           chmod 600 ~/.ssh/deploy
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
+      - uses: actions/checkout@v4
+
+      - name: Stage deployment configuration
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+        run: |
+          printf -v staging_path '%q' "$VPS_PATH/.proxy-ia-deploy"
+          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" "mkdir -p $staging_path"
+          scp -i ~/.ssh/deploy -r deploy compose.production.yml "$VPS_USER@$VPS_HOST:$VPS_PATH/.proxy-ia-deploy/"
+
       - name: Pull and restart the stack
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -203,11 +215,12 @@ jobs:
           IMAGE_REGISTRY: ${{ env.REGISTRY }}/${{ env.OWNER }}
           IMAGE_TAG: ${{ needs.publish.outputs.tag }}
         run: |
-          # Secrets are passed through the environment and re-quoted remotely so
-          # the token never appears in the workflow log.
+          # Bash quotes each argument before SSH passes it to the remote shell.
+          printf -v remote_args '%q ' "$VPS_PATH" "$GHCR_USER" "$GHCR_TOKEN" "$IMAGE_REGISTRY" "$IMAGE_TAG"
           ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-            "VPS_PATH=\"\$VPS_PATH\" GHCR_USER=\"\$GHCR_USER\" GHCR_TOKEN=\"\$GHCR_TOKEN\" IMAGE_REGISTRY=\"\$IMAGE_REGISTRY\" IMAGE_TAG=\"\$IMAGE_TAG\" sh -s" <<'REMOTE'
+            "bash -s -- $remote_args" <<'REMOTE'
           set -eu
+          VPS_PATH=$1; GHCR_USER=$2; GHCR_TOKEN=$3; IMAGE_REGISTRY=$4; IMAGE_TAG=$5
           cd "$VPS_PATH"
 
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -218,9 +231,12 @@ jobs:
             docker pull "$IMAGE_REGISTRY/deepsproxy-$name:$IMAGE_TAG"
           done
 
+          # Drain using the current configuration before replacing mounted files.
+          docker compose --env-file .env.production -f compose.production.yml stop -t 180 caddy gateway
+          cp .proxy-ia-deploy/compose.production.yml compose.production.yml
+          cp -R .proxy-ia-deploy/deploy/. deploy/
           DEEPSPROXY_REGISTRY="$IMAGE_REGISTRY/" DEEPSPROXY_IMAGE_TAG="$IMAGE_TAG" \
-            docker compose --env-file .env.production -f compose.production.yml \
-            up -d --remove-orphans
+            sh deploy/upgrade.sh
           REMOTE
 
       - name: Wait for gateway health
@@ -229,8 +245,9 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PATH: ${{ secrets.VPS_PATH }}
         run: |
+          printf -v remote_path '%q' "$VPS_PATH"
           ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-            "cd \"\$VPS_PATH\" && for i in 1 2 3 4 5 6 7 8 9 10; do \
+            "cd $remote_path && for i in 1 2 3 4 5 6 7 8 9 10; do \
               if docker inspect --format '{{.State.Health.Status}}' dsp_gateway 2>/dev/null | grep -qx healthy; then exit 0; fi; \
               sleep 6; \
             done; echo 'gateway did not become healthy' >&2; exit 1"

@@ -1,3 +1,4 @@
 deploy/*.sh text eol=lf
 deploy/Dockerfile text eol=lf
 deploy/*.Dockerfile text eol=lf
+deploy/*.conf text eol=lf

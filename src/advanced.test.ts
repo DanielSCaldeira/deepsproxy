@@ -1,3 +1,4 @@
+import { getProvider } from './providers/registry.ts';
 import test from 'node:test';
 import assert from 'node:assert';
 
@@ -469,7 +470,8 @@ test('compression: compressMessages trims older conversational history', async (
   assert.ok(compressed.length < messages.length);
 });
 
-test('telemetry and retry: reduces context limit on empty/error response and retries with compressed context', async () => {
+test('telemetry and retry: reduces context limit on empty/error response and retries with compressed context', async t => {
+  t.mock.method(getProvider(), 'models', async () => [{id:'deepseek-v4-flash-thinking-telemetry-test',contextLength:64000}]);
   const previousAttempts = process.env.DEEPSPROXY_MAX_ATTEMPTS;
   process.env.DEEPSPROXY_MAX_ATTEMPTS = '3';
   let attempts: number[] = [];
@@ -532,7 +534,8 @@ test('telemetry and retry: reduces context limit on empty/error response and ret
   }
 });
 
-test('automatic context summary keeps continuity across invisible upstream session rollovers', async () => {
+test('automatic context summary keeps continuity across invisible upstream session rollovers', async t => {
+  t.mock.method(getProvider(), 'models', async () => [{id:'deepseek-v4-flash-summary-test',contextLength:64000}]);
   const capturedPayloads: any[] = [];
   const restore = setupFetchMock((url, init) => {
     const payload = JSON.parse(init?.body as string || '{}');

@@ -5,7 +5,8 @@ export function required(name: string): string {
 }
 export function productionConfig() {
   const origin = new URL(required('PUBLIC_ORIGIN'));
-  if (origin.protocol !== 'https:' || origin.origin !== process.env.PUBLIC_ORIGIN) throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without trailing slash');
+  const localLive = process.env.LOCAL_LIVE_TEST === '1' && origin.protocol === 'http:' && origin.hostname === 'localhost';
+  if ((!localLive && origin.protocol !== 'https:') || origin.origin !== process.env.PUBLIC_ORIGIN) throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without trailing slash (local live tests allow http://localhost only)');
   for (const name of ['BOOTSTRAP_TOKEN', 'PROVISIONER_TOKEN', 'WORKER_MASTER_SECRET']) {
     if (required(name).length < 32) throw new Error(`${name} must have at least 32 characters`);
   }

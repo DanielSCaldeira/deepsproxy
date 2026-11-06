@@ -1,3 +1,4 @@
+import { getProvider } from './providers/registry.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -140,7 +141,8 @@ test('upstream statuses, network errors, empty streams and cancellation retain t
   assert.doesNotMatch(JSON.stringify(data), /PRIVATE_/);
 });
 
-test('parallel client requests correlate retries and internal summaries through streaming completion', async () => {
+test('parallel client requests correlate retries and internal summaries through streaming completion', async t => {
+  t.mock.method(getProvider(), 'models', async () => [{id:'diagnostic-test-model',contextLength:64000},{id:'deepseek-v4-flash',contextLength:512000}]);
   process.env.TEST_MOCK_PLAYWRIGHT = '1';
   const counts = new Map<string, number>();
   globalThis.fetch = async (_input, init) => {
