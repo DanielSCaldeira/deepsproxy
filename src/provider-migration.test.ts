@@ -20,7 +20,7 @@ test('legacy DeepSeek account, snapshot, operations and keys survive repeated mi
     const first=(await db.query('SELECT id,provider FROM provider_accounts ORDER BY provider')).rows;
     await migrate(db);
     assert.deepEqual((await db.query('SELECT id,provider FROM provider_accounts ORDER BY provider')).rows,first);
-    assert.equal(first.length,3); assert.equal(first.find(a=>a.provider==='deepseek')!.id,user);
+    assert.equal(first.length,4); assert.ok(first.some(a=>a.provider==='meta')); assert.equal(first.find(a=>a.provider==='deepseek')!.id,user);
     assert.ok(first.filter(a=>a.provider!=='deepseek').every(a=>a.id!==user));
     const snapshot=(await db.query('SELECT * FROM account_status WHERE account_id=$1',[user])).rows[0];
     assert.equal(snapshot.state,'authenticated'); assert.equal(snapshot.session_saved,true);
