@@ -328,3 +328,38 @@ test('QuillBot early manual confirmation reopens login and successful confirmati
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('QuillBot Concluir login waits for the site to restore the server session after the page load', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'quillbot-restore-'));
+  const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
+  const browser = await chromium.launch();
+  const provider = new QuillBotProvider();
+  let humanRunning = true, reopened = 0, probes = 0;
+  try {
+    const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; },
+      start: async () => { reopened++; humanRunning = true; } };
+    const launch = async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.route('https://quillbot.com/**', route => {
+        const pathname = new URL(route.request().url()).pathname;
+        // Live worker: the first user-cache after the load is 403 until POST /api/auth/issue-token runs.
+        if (pathname === '/api/auth/user-cache') return route.fulfill(++probes > 2 ? { json: { data: {} } } : { status: 403, json: { code: 'COM_FORBIDDEN' } });
+        if (pathname.startsWith('/api/')) return route.fulfill({ json: { data: { limit: 20, remaining: 20 } } });
+        return route.fulfill({ contentType: 'text/html', headers: { 'set-cookie': 'authenticated=true; Path=/' }, body: '<title>AI Chat</title><p>Chat</p>' });
+      });
+      await page.goto('https://quillbot.com/ai-chat');
+      Object.assign(provider, { context, page, loadedAt: Date.now() });
+    };
+    Object.assign(provider, { manualLogin: true, interactive: fake, launch });
+    await provider.finishLogin();
+    assert.equal(reopened, 0, 'a logged-in profile must not reopen the login window');
+    assert.ok(probes >= 3);
+    const status = await provider.status();
+    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true);
+  } finally {
+    await provider.close(); await browser.close();
+    if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
