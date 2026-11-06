@@ -20,8 +20,9 @@ test('legacy DeepSeek account, snapshot, operations and keys survive repeated mi
     const first=(await db.query('SELECT id,provider FROM provider_accounts ORDER BY provider')).rows;
     await migrate(db);
     assert.deepEqual((await db.query('SELECT id,provider FROM provider_accounts ORDER BY provider')).rows,first);
-    assert.equal(first.length,3); assert.equal(first.find(a=>a.provider==='deepseek')!.id,user);
+    assert.equal(first.length,4); assert.ok(first.some(a=>a.provider==='cohere')); assert.equal(first.find(a=>a.provider==='deepseek')!.id,user);
     assert.ok(first.filter(a=>a.provider!=='deepseek').every(a=>a.id!==user));
+    await assert.rejects(db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'unknown')",[user]));
     const snapshot=(await db.query('SELECT * FROM account_status WHERE account_id=$1',[user])).rows[0];
     assert.equal(snapshot.state,'authenticated'); assert.equal(snapshot.session_saved,true);
     assert.equal(snapshot.authenticated,true); assert.equal(snapshot.provider_message,null);

@@ -6,7 +6,7 @@ import type { BrowserContext } from 'playwright';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function getProfileDirectory(): string {
-  return path.resolve(projectRoot, process.env.PROVIDER_PROFILE_DIR || (process.env.PROVIDER === 'chatgpt' ? process.env.CHATGPT_PROFILE_DIR || 'chatgpt_profile' : process.env.PROVIDER === 'qwen' ? process.env.QWEN_PROFILE_DIR || 'qwen_profile' : process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile'));
+  return path.resolve(projectRoot, process.env.PROVIDER_PROFILE_DIR || (process.env.PROVIDER === 'cohere' ? process.env.COHERE_PROFILE_DIR || 'cohere_profile' : process.env.PROVIDER === 'chatgpt' ? process.env.CHATGPT_PROFILE_DIR || 'chatgpt_profile' : process.env.PROVIDER === 'qwen' ? process.env.QWEN_PROFILE_DIR || 'qwen_profile' : process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile'));
 }
 
 export function createSessionStore(directory: string) {

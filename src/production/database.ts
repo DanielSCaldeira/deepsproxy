@@ -68,9 +68,14 @@ export async function migrate(db: Database) {
     COMMIT;`);
   await db.query(`BEGIN;
     ALTER TABLE provider_accounts DROP CONSTRAINT IF EXISTS provider_accounts_provider_check;
-    ALTER TABLE provider_accounts ADD CONSTRAINT provider_accounts_provider_check CHECK(provider IN ('deepseek','qwen','chatgpt'));
+    ALTER TABLE provider_accounts ADD CONSTRAINT provider_accounts_provider_check CHECK(provider IN (${providers.map(p => `'${p}'`).join(',')}));
     INSERT INTO provider_accounts(id,user_id,provider) SELECT gen_random_uuid(),id,'chatgpt' FROM users ON CONFLICT(user_id,provider) DO NOTHING;
     INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING;
+    COMMIT;`);
+  // The constraint above is rebuilt from `providers`, so reapplying an older step never rejects newer providers.
+  await db.query(`BEGIN;
+    INSERT INTO provider_accounts(id,user_id,provider) SELECT gen_random_uuid(),id,'cohere' FROM users ON CONFLICT(user_id,provider) DO NOTHING;
+    INSERT INTO schema_migrations(version) VALUES(6) ON CONFLICT DO NOTHING;
     COMMIT;`);
   // Interrupted operations must not remain in progress after gateway replacement.
   await db.query(`
@@ -86,11 +91,12 @@ export async function audit(db: Database, actor: string | null, action: string, 
   await db.query('INSERT INTO audit(actor_id,action,subject_id) VALUES($1,$2,$3)', [actor, action, subject]);
 }
 
-export const providers = ['deepseek', 'qwen', 'chatgpt'] as const;
+export const providers = ['deepseek', 'qwen', 'chatgpt', 'cohere'] as const;
 export type Provider = typeof providers[number];
 export type ProviderAccount = { id: string; user_id: string; provider: Provider };
 export async function ensureAccounts(db: Database, user: string) {
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'chatgpt') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES($1,$1,'deepseek') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'qwen') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
+  await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'cohere') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
 }

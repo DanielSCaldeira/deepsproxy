@@ -3,6 +3,7 @@ dist
 deepseek_profile
 qwen_profile
 chatgpt_profile
+cohere_profile
 .cache
 *.pem
 *.key
