@@ -260,12 +260,16 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
       !(Array.isArray(m?.content) && (m.content as any[]).every(p => p?.type === 'text' && typeof p.text === 'string'))))
       return c.json({error:{message:'ChatGPT web aceita somente mensagens de texto.',code:'invalid_request_error'}},400);
     if (provider.id === 'chatgpt' && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:'Controle de reasoning_effort indisponível no ChatGPT web.',code:'invalid_request_error'}},400);
+    if (provider.id === 'mistral' && body.messages.some(m => m?.content !== null && typeof m?.content !== 'string' &&
+      !(Array.isArray(m?.content) && (m.content as any[]).every(p => p?.type === 'text' && typeof p.text === 'string'))))
+      return c.json({error:{message:'Mistral web aceita somente mensagens de texto.',code:'invalid_request_error'}},400);
+    if (provider.id === 'mistral' && body.reasoning_effort && body.reasoning_effort !== 'none') return c.json({error:{message:'Use o modelo mistral/think; reasoning_effort não é controlável no Mistral web.',code:'invalid_request_error'}},400);
     const spec = models.find(model => model.id === body.model)!;
     if (provider.id !== 'deepseek' && spec.contextLength > 0) getModelTelemetry(body.model).detectedLimit = Math.min(getModelTelemetry(body.model).detectedLimit, spec.contextLength * 3.5);
     getGenerationGuard().assertAllowed();
     diagnostic('request.started', { messageCount: body.messages?.length ?? 0, stream: body.stream ?? false, model: body.model });
     const isStream = body.stream ?? false;
-    const isThinkingModel = provider.id === 'chatgpt' ? false : provider.id === 'qwen' ? (body.reasoning_effort !== undefined && body.reasoning_effort !== 'none') : body.model.includes('thinking');
+    const isThinkingModel = provider.id === 'chatgpt' || provider.id === 'mistral' ? false : provider.id === 'qwen' ? (body.reasoning_effort !== undefined && body.reasoning_effort !== 'none') : body.model.includes('thinking');
     const isProModel = body.model.includes('pro');
     const completionId = 'chatcmpl-' + uuidv4();
 
