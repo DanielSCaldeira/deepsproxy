@@ -237,6 +237,9 @@ test('QuillBot frontend fixture: authenticated account, generation, IDE tools, q
     for (let i = 0; i < 50 && guard.status().busy; i++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(guard.status().busy, false);
 
+    // The cancelled request above may still reach the fixture route; let the count settle.
+    for (let last = -1, i = 0; i < 50 && last !== prompts.length; i++) { last = prompts.length; await new Promise(resolve => setTimeout(resolve, 100)); }
+
     // HTTP 429 from the conversation request keeps the login and defers the queue.
     quota = true;
     const sent = prompts.length;
