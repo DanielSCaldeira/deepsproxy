@@ -36,6 +36,16 @@ No modo local, configure `PROVIDER=chatgpt` e, opcionalmente,
 O [registro da integração](docs/chatgpt-integration.md) distingue os testes
 controlados da validação real pendente e documenta o protocolo consultado.
 
+## Meta AI web
+
+No card **Meta AI**, entre na tela remota com Facebook, Instagram ou conta Meta
+e clique em **Concluir login**. O uso anônimo do site não é aceito: o proxy
+exige a conta autenticada. `meta/auto` mantém o modo selecionado no site;
+`meta/think_*` só aparece quando o menu de modos da conta o oferece. A resposta
+é entregue ao final da geração. No modo local, use `PROVIDER=meta` e,
+opcionalmente, `META_PROFILE_DIR` (padrão `meta_profile`). Veja o
+[registro da integração](docs/meta-integration.md) e as validações pendentes.
+
 ## Provedores e código compartilhado
 
 Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).

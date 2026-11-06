@@ -22,6 +22,7 @@ const env = {
   QUILLBOT_PROFILE_DIR: path.join(directory, 'quillbot'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   ERNIE_PROFILE_DIR: path.join(directory, 'ernie'),
+  META_PROFILE_DIR: path.join(directory, 'meta'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',
 };
 delete env.PROVIDER_PROFILE_DIR;

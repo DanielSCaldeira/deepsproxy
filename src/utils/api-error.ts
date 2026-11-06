@@ -25,10 +25,11 @@ export function apiError(error: unknown, code: string) {
   const kimi = process.env.PROVIDER === 'kimi';
   const mistral = process.env.PROVIDER === 'mistral';
   const quillbot = process.env.PROVIDER === 'quillbot';
-  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : cohere ? 'Cohere' : ernie ? 'Ernie' : gemini ? 'Gemini' : copilot ? 'Copilot' : kimi ? 'Kimi' : mistral ? 'Mistral' : quillbot ? 'QuillBot' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
-  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : cohere ? 'https://dashboard.cohere.com/playground/chat' : ernie ? 'https://wenxin.baidu.com/' : gemini ? 'https://gemini.google.com/app' : copilot ? 'https://copilot.microsoft.com/chats/new' : kimi ? 'https://www.kimi.ai/' : mistral ? 'https://chat.mistral.ai/chat' : quillbot ? 'https://quillbot.com/ai-chat' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
+  const meta = process.env.PROVIDER === 'meta';
+  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : cohere ? 'Cohere' : ernie ? 'Ernie' : gemini ? 'Gemini' : copilot ? 'Copilot' : kimi ? 'Kimi' : mistral ? 'Mistral' : quillbot ? 'QuillBot' : meta ? 'Meta AI' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
+  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : cohere ? 'https://dashboard.cohere.com/playground/chat' : ernie ? 'https://wenxin.baidu.com/' : gemini ? 'https://gemini.google.com/app' : copilot ? 'https://copilot.microsoft.com/chats/new' : kimi ? 'https://www.kimi.ai/' : mistral ? 'https://chat.mistral.ai/chat' : quillbot ? 'https://quillbot.com/ai-chat' : meta ? 'https://www.meta.ai/' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
   const originalCode = code;
-  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity|cohere|ernie|gemini|copilot|kimi|mistral|quillbot)_/, '');
+  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity|cohere|ernie|gemini|copilot|kimi|mistral|quillbot|meta)_/, '');
   const technical = error instanceof Error ? error.message : String(error);
   const guard = getGenerationGuard().status();
   const stored = ['account_suspended', 'login_required'].includes(kind) ? guard.block?.originalMessage : null;
@@ -65,6 +66,7 @@ export function apiError(error: unknown, code: string) {
   if (copilot) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com a conta Microsoft (inclusive a verificação em duas etapas)');
   if (chatgpt || claude || cohere || copilot || kimi || quillbot) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   if (mistral) action = action.replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
+  if (meta) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com Facebook, Instagram ou conta Meta').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   return { error: {
     // Many OpenAI-compatible clients display only message, so it must stand alone.
     message: `${original || technical}\n\nO que fazer: ${action}`,
