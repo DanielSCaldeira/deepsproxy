@@ -371,3 +371,14 @@ acrescenta `.claude.ai`, `s-cdn.anthropic.com` e `assets-proxy.anthropic.com`;
 Cloudflare, hCaptcha e Google já estavam liberados. Veja
 [o registro da integração](../docs/claude-integration.md): o envio real com
 conta ainda não foi validado.
+
+## Conta Cohere
+
+A migração 6 adiciona uma conta `cohere` por usuário, reconstruindo a restrição
+de provedores a partir da lista completa e preservando as contas existentes.
+O card **Cohere** abre `https://dashboard.cohere.com/playground/chat` no navegador
+remoto (login por e-mail, Google ou GitHub); após entrar, clique em
+**Concluir login**. A restauração aceita `cohere`. Os destinos acrescentados ao
+egress são `dashboard.cohere.com`, `production.api.os.cohere.com` e
+`api.cohere.com`. Veja [o registro da integração](../docs/cohere-integration.md):
+o envio real com conta ainda não foi validado.

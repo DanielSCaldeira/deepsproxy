@@ -18,10 +18,11 @@ export function apiError(error: unknown, code: string) {
   const chatgpt = process.env.PROVIDER === 'chatgpt';
   const claude = process.env.PROVIDER === 'claude';
   const perplexity = process.env.PROVIDER === 'perplexity';
-  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
-  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
+  const cohere = process.env.PROVIDER === 'cohere';
+  const service = claude ? 'Claude' : perplexity ? 'Perplexity' : cohere ? 'Cohere' : chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
+  const chatUrl = claude ? 'https://claude.ai/' : perplexity ? 'https://www.perplexity.ai/' : cohere ? 'https://dashboard.cohere.com/playground/chat' : chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
   const originalCode = code;
-  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity)_/, '');
+  const kind = code.replace(/^(deepseek|qwen|chatgpt|claude|perplexity|cohere)_/, '');
   const technical = error instanceof Error ? error.message : String(error);
   const guard = getGenerationGuard().status();
   const stored = ['account_suspended', 'login_required'].includes(kind) ? guard.block?.originalMessage : null;
@@ -52,7 +53,7 @@ export function apiError(error: unknown, code: string) {
     action = `Verifique a conexão e a disponibilidade do serviço ${service}. Aguarde antes de tentar novamente; se persistir, consulte os logs do proxy com a mensagem de erro abaixo.`;
   }
   if (perplexity) action = action.replace(/com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, 'com código por e-mail, Google ou Apple').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
-  if (chatgpt || claude) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
+  if (chatgpt || claude || cohere) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   return { error: {
     // Many OpenAI-compatible clients display only message, so it must stand alone.
     message: `${original || technical}\n\nO que fazer: ${action}`,

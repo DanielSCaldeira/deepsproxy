@@ -269,7 +269,7 @@ async function handleChatCompletions(c: Context, finish: (outcome: string, statu
     getGenerationGuard().assertAllowed();
     diagnostic('request.started', { messageCount: body.messages?.length ?? 0, stream: body.stream ?? false, model: body.model });
     const isStream = body.stream ?? false;
-    const isThinkingModel = provider.id === 'chatgpt' || provider.id === 'claude' || provider.id === 'perplexity' ? false : provider.id === 'qwen' ? (body.reasoning_effort !== undefined && body.reasoning_effort !== 'none') : body.model.includes('thinking');
+    const isThinkingModel = provider.id === 'chatgpt' || provider.id === 'claude' || provider.id === 'perplexity' || provider.id === 'cohere' ? false : provider.id === 'qwen' ? (body.reasoning_effort !== undefined && body.reasoning_effort !== 'none') : body.model.includes('thinking');
     const isProModel = body.model.includes('pro');
     const completionId = 'chatcmpl-' + uuidv4();
 
