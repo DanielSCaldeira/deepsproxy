@@ -43,6 +43,8 @@ test('Gemini identity, routing, catalog and authentication evidence', () => {
   assert.equal(geminiAuthenticated({ status: 200, offOrigin: false, token: false, signInLink: true, accountLink: false }), false);
   assert.equal(geminiAuthenticated({ status: 200, offOrigin: false, token: true, signInLink: false, accountLink: true }), true);
   assert.equal(geminiAuthenticated({ status: 200, offOrigin: false, token: true, signInLink: true, accountLink: false }), false);
+  // Real signed-in /app (2026-11-06): token and account menu, plus an add/switch-account ServiceLogin link.
+  assert.equal(geminiAuthenticated({ status: 200, offOrigin: false, token: true, signInLink: true, accountLink: true }), true);
   assert.equal(geminiAuthenticated({ status: 200, offOrigin: true, token: true, signInLink: false, accountLink: true }), false);
   assert.equal(geminiAuthenticated({ status: 500, offOrigin: false, token: true, signInLink: false, accountLink: true }), false);
   // The rendered user turn (captured) prefixes "Você disse" and splits paragraphs.

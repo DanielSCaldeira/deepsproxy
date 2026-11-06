@@ -8,15 +8,19 @@ export interface GeminiAuthProbe {
   offOrigin: boolean;
   /** WIZ_global_data carries the per-session request token (`SNlM0e`) only for signed-in users. */
   token: boolean;
-  /** Signed-out pages link the OneGoogle bar to accounts.google.com/ServiceLogin. */
+  /** Signed-out pages link the OneGoogle bar to accounts.google.com/ServiceLogin. Signed-in pages
+   * also carry one ServiceLogin link (add/switch account), so it is only evidence without an account link. */
   signInLink: boolean;
   /** Signed-in pages link the OneGoogle bar account menu to SignOutOptions. */
   accountLink: boolean;
 }
 
-/** Signed-out evidence always wins; a visible composer alone is not authentication (anonymous chat exists). */
+/** The account menu (SignOutOptions) proves a signed-in page; otherwise the token counts only without
+ * a sign-in link. A visible composer alone is not authentication (anonymous chat exists).
+ * Observed on 2026-11-06: a signed-in /app had SNlM0e, SignOutOptions and one ServiceLogin link. */
 export function geminiAuthenticated(probe: GeminiAuthProbe): boolean {
-  return probe.status === 200 && !probe.offOrigin && !probe.signInLink && (probe.token || probe.accountLink);
+  if (probe.status !== 200 || probe.offOrigin) return false;
+  return probe.accountLink || (probe.token && !probe.signInLink);
 }
 
 export function geminiError(status: number, reason?: string): UpstreamError {
