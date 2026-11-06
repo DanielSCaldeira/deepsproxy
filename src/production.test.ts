@@ -115,8 +115,8 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
   await t.test('two users have three isolated providers; one key routes all and Qwen disconnect preserves DeepSeek',async()=> {
     const aliceAccounts=(await (await request('/api/me/accounts','GET',undefined,alice)).json()).accounts;
     const bobAccounts=(await (await request('/api/me/accounts','GET',undefined,bob)).json()).accounts;
-    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['chatgpt','deepseek','qwen']);
-    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,6);
+    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['chatgpt','deepseek','kimi','qwen']);
+    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,8);
     const aliceChatGPT=aliceAccounts.find((a:any)=>a.provider==='chatgpt');
     assert.equal(aliceChatGPT.name,'ChatGPT'); assert.equal(aliceChatGPT.manualLoginConfirmation,true);
     workers.chatgptAccounts.add(aliceChatGPT.id);
@@ -124,6 +124,8 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     const chatgpt=await request('/v1/chat/completions','POST',{model:'chatgpt/auto',messages:[]},{},{Authorization:'Bearer '+aliceKey});
     assert.equal(chatgpt.status,200); await chatgpt.text();
     assert.equal(workers.calls.at(-1)!.id,aliceChatGPT.id);
+    const aliceKimi=aliceAccounts.find((a:any)=>a.provider==='kimi');
+    assert.equal(aliceKimi.name,'Kimi'); assert.equal(aliceKimi.manualLoginConfirmation,true);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);

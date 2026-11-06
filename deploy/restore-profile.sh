@@ -23,7 +23,7 @@ $row
 EOF
   [ "$expected_volume" = "$volume" ] || exit 1
   printf '%s' "$owner" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || exit 1
-  case "$provider" in deepseek|qwen|chatgpt) ;; *) exit 1 ;; esac
+  case "$provider" in deepseek|qwen|chatgpt|kimi) ;; *) exit 1 ;; esac
 fi
 worker_image=$(docker compose --env-file .env.production -f compose.production.yml --profile images config --images | awk '/deepsproxy-worker:/ {print; exit}')
 [ -n "$worker_image" ] || exit 1

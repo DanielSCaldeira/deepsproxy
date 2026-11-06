@@ -61,8 +61,8 @@ export class GenerationGuard {
   }
   assertAllowed() {
     if (this.saved.block) throw new UpstreamError(this.saved.block.state === 'suspended'
-      ? `${process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} account is suspended; interactive login validation is required.`
-      : `${process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} login is required; interactive login validation is required.`, this.saved.block.state === 'suspended' ? 403 : 401,
+      ? `${process.env.PROVIDER === 'kimi' ? 'Kimi' : process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} account is suspended; interactive login validation is required.`
+      : `${process.env.PROVIDER === 'kimi' ? 'Kimi' : process.env.PROVIDER === 'chatgpt' ? 'ChatGPT' : process.env.PROVIDER === 'qwen' ? 'Qwen' : 'DeepSeek'} login is required; interactive login validation is required.`, this.saved.block.state === 'suspended' ? 403 : 401,
       false, this.saved.block.originalMessage ?? null);
   }
   block(block: AccountBlock) {
