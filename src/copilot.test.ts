@@ -35,7 +35,9 @@ test('Copilot catalog, routing, login evidence and service errors', () => {
   assert.equal(copilotLoginState(base), 'authenticated');
   assert.equal(copilotLoginState({ ...base, tier: 'guest' }), 'login_required', 'anonymous tier is never accepted');
   assert.equal(copilotLoginState({ ...base, anonymous: true }), 'login_required');
-  assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com' }), 'login_required', 'marketing redirect');
+  assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com', composer: false, tier: null }), 'login_required', 'marketing redirect');
+  assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com' }), 'authenticated', 'signed-in chat app at copilot.com/chat');
+  assert.equal(copilotLoginState({ ...base, origin: 'https://copilot.com', tier: 'guest' }), 'login_required');
   assert.equal(copilotLoginState({ ...base, origin: 'https://login.live.com' }), 'login_required');
   assert.equal(copilotLoginState({ ...base, userStatus: 401, tier: null }), 'login_required');
   assert.equal(copilotLoginState({ ...base, userStatus: null, tier: null }), 'pending');

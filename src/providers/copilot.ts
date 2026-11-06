@@ -13,6 +13,8 @@ import { COPILOT_MODES, CopilotError, isCopilotMode, parseCopilotEvents } from '
 export const COPILOT_ORIGIN = 'https://copilot.microsoft.com';
 // `/` answers 301 to the copilot.com marketing page; `/chats/new` serves the chat app.
 export const COPILOT_CHAT_URL = COPILOT_ORIGIN + '/chats/new';
+// After sign-in a cookie redirects `/chats/new` to the same chat app at copilot.com/chat (2026-11-06).
+const COPILOT_APP_ORIGINS = [COPILOT_ORIGIN, 'https://copilot.com', 'https://www.copilot.com'];
 // Selectors from the public frontend bundle (data-testid rendered from `testId`).
 export const COPILOT_SELECTORS = {
   editor: '[data-testid="composer-input"]:visible',
@@ -28,7 +30,9 @@ export type CopilotPageProbe = { origin: string; anonymous: boolean; composer: b
 /** Login evidence from the site itself: the anonymous block page, the composer and the
  * account tier the frontend received from `GET /c/api/user` (`guest` when anonymous). */
 export function copilotLoginState(probe: CopilotPageProbe): 'authenticated' | 'login_required' | 'pending' {
-  if (probe.origin !== COPILOT_ORIGIN || probe.anonymous) return 'login_required';
+  if (!COPILOT_APP_ORIGINS.includes(probe.origin) || probe.anonymous) return 'login_required';
+  // copilot.com also serves the marketing page; only its chat app (with the composer) counts.
+  if (probe.origin !== COPILOT_ORIGIN && !probe.composer) return 'login_required';
   if (probe.userStatus === 401 || probe.userStatus === 403 || probe.tier === 'guest') return 'login_required';
   if (probe.composer && probe.tier) return 'authenticated';
   return 'pending';
