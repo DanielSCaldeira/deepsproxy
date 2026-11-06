@@ -39,6 +39,7 @@ controlados da validação real pendente e documenta o protocolo consultado.
 ## Provedores e código compartilhado
 
 Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).
+O status de cada site planejado está no [roadmap de provedores](docs/roadmap-provedores.md).
 
 Os adaptadores em `src/providers` cuidam somente da autenticação, transporte,
 catálogo e decodificação próprios do serviço. Histórico, resumo, ferramentas,

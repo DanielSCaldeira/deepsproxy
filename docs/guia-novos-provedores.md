@@ -8,6 +8,9 @@ confirmados novamente: seletores, endpoints e modelos podem mudar.
 Nos exemplos, `novo` é o identificador do provedor a implementar. Substitua-o
 pelo identificador definitivo antes de executar comandos ou escrever código.
 
+A lista de sites planejados e o status de cada integração estão no
+[roadmap de provedores](roadmap-provedores.md).
+
 ## 1. Entenda o caminho existente
 
 ```text
