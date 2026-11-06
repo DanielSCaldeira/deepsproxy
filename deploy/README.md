@@ -397,3 +397,19 @@ observados no chat e na API de conversa. Hosts adicionais do passport só devem
 ser acrescentados após falhas concretas. Veja
 [o registro da integração](../docs/ernie-integration.md); o envio com conta
 real ainda não foi validado.
+
+## Conta Copilot
+
+A migração 6 adiciona uma conta `copilot` por usuário, preservando as contas,
+IDs, volumes e chaves existentes. O worker recebe `PROVIDER=copilot` e
+`PROVIDER_PROFILE_DIR=/profile`. O card Copilot abre
+`https://copilot.microsoft.com/chats/new` no navegador remoto; entre com a conta
+Microsoft (incluindo a verificação em duas etapas) e clique em **Concluir login**.
+O uso anônimo não é aceito pelo proxy. A restauração passa a aceitar `copilot`.
+
+Os destinos do proxy de saída são `copilot.microsoft.com`, `copilot.fun`,
+`login.microsoftonline.com`, `login.live.com`, `account.live.com`,
+`aadcdn.msauth.net`, `logincdn.msftauth.net`, `acctcdn.msauth.net` e
+`acctcdn.msftauth.net`. Telemetria (Sprig, Sentry, Clarity, OneCollector) não
+foi liberada. Veja [o registro da integração](../docs/copilot-integration.md):
+o envio real ainda não foi validado com conta.
