@@ -51,7 +51,7 @@ export function browserLogText(raw: string): string {
 function browserFields(fields: Record<string, unknown>): Record<string, unknown> {
   const safe: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (key === 'provider' && ['deepseek', 'qwen', 'chatgpt'].includes(String(value))) safe[key] = value;
+    if (key === 'provider' && ['deepseek', 'qwen', 'chatgpt', 'grok'].includes(String(value))) safe[key] = value;
     else if (['browserId', 'pageId', 'networkRequestId'].includes(key) && typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value)) safe[key] = value;
     else if (['status', 'durationMs', 'line', 'column'].includes(key) && typeof value === 'number' && Number.isFinite(value)) safe[key] = value;
     else if (key === 'url' && typeof value === 'string') safe[key] = browserLogUrl(value);
@@ -69,7 +69,7 @@ export function observeBrowser(context: BrowserContext, options: { enabled?: boo
   if (!enabled) return;
   const existing = attached.get(context);
   if (existing) return existing;
-  const provider = process.env.PROVIDER === 'chatgpt' ? 'chatgpt' : process.env.PROVIDER === 'qwen' ? 'qwen' : 'deepseek';
+  const provider = process.env.PROVIDER === 'chatgpt' ? 'chatgpt' : process.env.PROVIDER === 'grok' ? 'grok' : process.env.PROVIDER === 'qwen' ? 'qwen' : 'deepseek';
   const worker = process.env.APP_MODE === 'worker';
   const file = options.file || process.env.DEEPSPROXY_BROWSER_LOG_FILE || (worker
     ? path.join(process.env.PROVIDER_PROFILE_DIR || '/profile', 'browser-diagnostic.log')

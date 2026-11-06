@@ -49,3 +49,4 @@ api_key.txt
 # Private Qwen browser profile
 qwen_profile/
 chatgpt_profile/
+grok_profile/
