@@ -12,7 +12,7 @@ export const openApiSpec = {
     title: 'Proxy IA API',
     version: '1.0.0',
     description:
-      'OpenAI-compatible proxy for DeepSeek, Qwen, ChatGPT and Claude web models via browser automation. ' +
+      'OpenAI-compatible proxy for DeepSeek, Qwen, ChatGPT, Claude and Perplexity web models via browser automation. ' +
       'Supports streaming, tool calling, and thinking models.',
   },
   servers: [{ url: '/' }],

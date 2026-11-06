@@ -13,6 +13,7 @@ const env = {
   DEEPSEEK_PROFILE_DIR: path.join(directory, 'deepseek'),
   CHATGPT_PROFILE_DIR: path.join(directory, 'chatgpt'),
   CLAUDE_PROFILE_DIR: path.join(directory, 'claude'),
+  PERPLEXITY_PROFILE_DIR: path.join(directory, 'perplexity'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',
 };

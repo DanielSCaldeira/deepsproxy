@@ -8,6 +8,10 @@ import type { ProductionConfig } from './config.ts';
 import { Workers } from './workers.ts';
 import { panelPage } from './panel.ts';
 
+const providerNames: Record<string, string> = { deepseek: 'DeepSeek', qwen: 'Qwen', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', copilot: 'Copilot', mistral: 'Mistral', grok: 'Grok', meta: 'Meta AI', cohere: 'Cohere', perplexity: 'Perplexity', kimi: 'Kimi', quillbot: 'QuillBot', ernie: 'Ernie' };
+// Providers whose login is confirmed by the user in the panel ('Concluir login').
+const manualLoginProviders = new Set<string>(['deepseek', 'chatgpt', 'claude', 'perplexity']);
+
 type Identity = { id: string; email: string; role: string; session: string; csrf: string };
 type Env = { Variables: { identity: Identity } };
 export function createGateway(db: Database, workers: Workers, config: ProductionConfig) {
@@ -117,7 +121,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
   app.get('/api/me/accounts', async c => {
     await ensureAccounts(db,c.get('identity').id);
     const rows = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[c.get('identity').id])).rows;
-    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:a.provider==='qwen'?'Qwen':a.provider==='chatgpt'?'ChatGPT':a.provider==='claude'?'Claude':'DeepSeek',...await workers.status(a.id),models:await workers.models(a.id),manualLoginConfirmation:a.provider==='deepseek'||a.provider==='chatgpt'||a.provider==='claude'})))});
+    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:providerNames[a.provider]??a.provider,...await workers.status(a.id),models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider)})))});
   });
   app.get('/api/me/accounts/:provider/status', async c => c.json({...await workers.status((await accountFor(c)).id),models:await workers.models((await accountFor(c)).id)}));
   app.get('/api/me/status', async c => c.json(await workers.status(c.get('identity').id)));
@@ -232,7 +236,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
     limits.take('api:' + user.id, 60, 60_000);
     await ensureAccounts(db,user.id);
     const accounts = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[user.id])).rows;
-    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id),manualLoginConfirmation:a.provider==='deepseek'||a.provider==='chatgpt'||a.provider==='claude'})));
+    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider)})));
     if (c.req.path.endsWith('models')) return c.json({object:'list',data:catalogs.flatMap(a => a.models.map((id: string) => ({id,object:'model',created:0,owned_by:a.provider})))});
     let body: any;
     try { body = await c.req.json(); } catch { throw new HttpError(400,'JSON inválido.','invalid_request_error'); }

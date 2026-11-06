@@ -4,6 +4,7 @@ deepseek_profile
 qwen_profile
 chatgpt_profile
 claude_profile
+perplexity_profile
 .cache
 *.pem
 *.key
