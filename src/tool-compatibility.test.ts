@@ -166,6 +166,7 @@ test('input retains user intent, Zed rules and useful history without previous r
   const prompt = appendToolInstructions(serialized.systemPrompt, body);
   assert.ok(prompt.startsWith(serialized.systemPrompt));
   assert.ok(prompt.includes(JSON.stringify(tools[0].function)));
+  assert.match(prompt, /The IDE client executes these tools/);
   assert.ok(prompt.length - serialized.systemPrompt.length < 650);
   assert.match(appendToolInstructions('', { ...body, tool_choice: 'required' }), /Call at least one/);
   assert.match(appendToolInstructions('', { ...body, tool_choice: { type: 'function', function: { name: 'terminal' } } }), /MUST call the tool "terminal"/);

@@ -6,7 +6,7 @@ import type { BrowserContext } from 'playwright';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function getProfileDirectory(): string {
-  return path.resolve(projectRoot, process.env.PROVIDER_PROFILE_DIR || (process.env.PROVIDER === 'qwen' ? process.env.QWEN_PROFILE_DIR || 'qwen_profile' : process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile'));
+  return path.resolve(projectRoot, process.env.PROVIDER_PROFILE_DIR || (process.env.PROVIDER === 'chatgpt' ? process.env.CHATGPT_PROFILE_DIR || 'chatgpt_profile' : process.env.PROVIDER === 'qwen' ? process.env.QWEN_PROFILE_DIR || 'qwen_profile' : process.env.DEEPSEEK_PROFILE_DIR || 'deepseek_profile'));
 }
 
 export function createSessionStore(directory: string) {
@@ -44,6 +44,11 @@ export function createSessionStore(directory: string) {
     return path.join(directory, '.auth-state.json');
   }
 
+  const interactiveMarker = path.join(directory, '.interactive-login.pending');
+  async function beginInteractiveLogin(): Promise<void> {
+    await fs.writeFile(interactiveMarker, 'pending\n', { mode: 0o600 });
+  }
+
   async function isProfileInUse(): Promise<boolean> {
     try {
       const owner = Number(await fs.readFile(path.join(directory, '.runtime.lock'), 'utf8'));
@@ -60,6 +65,9 @@ export function createSessionStore(directory: string) {
   }
 
   async function restoreSession(browser: BrowserContext): Promise<boolean> {
+    // A worker may restart between the human login and snapshot validation.
+    // Preserve its newer persistent profile instead of replaying older state.
+    if (await fs.access(interactiveMarker).then(() => true, () => false)) return false;
     if (!await hasSavedSession()) return false;
     await browser.setStorageState(sessionFile());
     return true;
@@ -72,9 +80,10 @@ export function createSessionStore(directory: string) {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(temporary, JSON.stringify(state), { mode: 0o600 });
     await fs.rename(temporary, file);
+    await fs.unlink(interactiveMarker).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
   }
 
-  return { lockProfile, isProfileInUse, hasSavedSession, restoreSession, saveSession };
+  return { lockProfile, isProfileInUse, hasSavedSession, restoreSession, saveSession, beginInteractiveLogin };
 }
 
 export const lockProfile = () => createSessionStore(getProfileDirectory()).lockProfile();

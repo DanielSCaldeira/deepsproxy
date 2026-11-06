@@ -60,6 +60,11 @@ services:
     restart: unless-stopped
   egress:
     container_name: dsp_egress
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
     image: ${DEEPSPROXY_REGISTRY:-}deepsproxy-egress:${DEEPSPROXY_IMAGE_TAG:-local}
     build: { context: ., dockerfile: deploy/egress.Dockerfile }
     volumes:

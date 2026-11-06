@@ -1,10 +1,14 @@
 import type { ProviderAdapter, ProviderEvent } from './types.ts';
 import { createDeepSeekStream, updateSessionParent } from '../services/deepseek.ts';
-import { initPlaywright, closePlaywright, getActivePage, openDeepSeekChat, saveAuthenticatedSession, getSessionStatus } from '../services/playwright.ts';
+import { initPlaywright, closePlaywright, getActivePage, openDeepSeekChat, saveAuthenticatedSession, getSessionStatus, waitForAuthenticatedChat } from '../services/playwright.ts';
 import { getContextLength } from '../services/telemetry.ts';
 import { withGenerationSignal } from '../services/generation-guard.ts';
 import { diagnostic } from '../utils/diagnostics.ts';
 import { DEEPSEEK_MODEL_IDS } from './catalog.ts';
+import { InteractiveBrowser } from '../services/interactive-browser.ts';
+import { getProfileDirectory, hasSavedSession } from '../services/session-store.ts';
+import { Mutex } from '../utils/mutex.ts';
+import { UpstreamError } from '../services/generation-guard.ts';
 
 /** Decode the provider protocol; always cancel unread data to release the generation lease. */
 export async function* decodeDeepSeekStream(stream: ReadableStream, uiSessionId: string): AsyncGenerator<ProviderEvent> {
@@ -107,19 +111,85 @@ export async function* decodeDeepSeekStream(stream: ReadableStream, uiSessionId:
 
 export class DeepSeekProvider implements ProviderAdapter {
   readonly id = 'deepseek' as const;
+  private interactive?: InteractiveBrowser;
+  private manualLogin = false;
+  private transitioning = false;
+  private loginMutex = new Mutex();
   async models() { return DEEPSEEK_MODEL_IDS.map(id => ({ id, contextLength: getContextLength(id), maxOutputTokens: 8_000 })); }
-  initialize(headless = true) { return initPlaywright(headless); }
-  async connect() {
+  initialize(headless = true) {
+    if (this.manualLogin || this.transitioning) return Promise.resolve();
+    return initPlaywright(headless);
+  }
+  async connect(interactive = true) {
+    if (process.env.APP_MODE === 'worker' && interactive) {
+      return this.loginMutex.withLock(async () => {
+        if (this.manualLogin && this.interactive?.running) return;
+        this.transitioning = true;
+        try {
+          await closePlaywright();
+          this.interactive ??= new InteractiveBrowser(getProfileDirectory());
+          await this.interactive.start();
+          this.manualLogin = true;
+        } finally { this.transitioning = false; }
+      });
+    }
     await this.initialize(false);
     const page = getActivePage();
     if (!page) throw new Error('browser_unavailable');
     await openDeepSeekChat(page, 20_000);
   }
-  confirmLogin(interactive = false) { return saveAuthenticatedSession(interactive); }
-  status() { return getSessionStatus(); }
-  close() { return closePlaywright(); }
+  async confirmLogin(interactive = false) {
+    if (this.manualLogin || this.transitioning) throw new Error('Conclua o login no navegador e clique em Concluir login.');
+    if (interactive) {
+      const page = getActivePage();
+      if (!page) throw new Error('browser_unavailable');
+      await waitForAuthenticatedChat(page, { allowSuspended: true, timeoutMs: 20_000 });
+    }
+    return saveAuthenticatedSession(interactive, { allowSuspended: interactive });
+  }
+  async finishLogin() {
+    return this.loginMutex.withLock(async () => {
+      if (!this.manualLogin) return this.confirmLogin(true);
+      this.transitioning = true;
+      try {
+        await this.interactive!.close();
+        // The profile now contains the human's latest login. An older snapshot
+        // must not overwrite it before we validate and save the new session.
+        await initPlaywright(false, { restoreSavedSession: false });
+        const page = getActivePage();
+        if (!page) throw new Error('browser_unavailable');
+        await openDeepSeekChat(page, 20_000);
+        await waitForAuthenticatedChat(page, { allowSuspended: true, timeoutMs: 20_000 });
+        await saveAuthenticatedSession(true, { allowSuspended: true });
+        this.manualLogin = false;
+      } catch (error) {
+        // An early click must return the user to the human login browser.
+        if (!this.interactive!.running) {
+          await closePlaywright();
+          await this.interactive!.start();
+        }
+        throw new Error('O login ainda não foi confirmado. Conclua o acesso ao chat e clique em Concluir login novamente.', { cause: error });
+      } finally { this.transitioning = false; }
+    });
+  }
+  isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!getActivePage()); }
+  async status() {
+    if (this.manualLogin || this.transitioning) return {
+      state: 'login_required' as const, sessionSaved: await hasSavedSession(),
+      checkedAt: new Date().toISOString(), confirmationRequired: true,
+    };
+    return getSessionStatus();
+  }
+  async close() {
+    return this.loginMutex.withLock(async () => {
+      await this.interactive?.close();
+      this.manualLogin = false;
+      await closePlaywright();
+    });
+  }
   getActivePage() { return getActivePage(); }
   async generate(prompt: string, model: string, thinking: boolean, signal?: AbortSignal) {
+    if (this.manualLogin || this.transitioning) throw new UpstreamError('DeepSeek login is required. Conclua o login pelo painel.', 401);
     const dispatch = () => createDeepSeekStream(prompt, thinking, model.includes('-pro'), null);
     const result = await (signal ? withGenerationSignal(signal, dispatch) : dispatch());
     return decodeDeepSeekStream(result.stream, result.uiSessionId);

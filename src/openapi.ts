@@ -12,7 +12,7 @@ export const openApiSpec = {
     title: 'Proxy IA API',
     version: '1.0.0',
     description:
-      'OpenAI-compatible proxy for DeepSeek and Qwen models via browser automation. ' +
+      'OpenAI-compatible proxy for DeepSeek, Qwen and ChatGPT web models via browser automation. ' +
       'Supports streaming, tool calling, and thinking models.',
   },
   servers: [{ url: '/' }],
@@ -52,7 +52,7 @@ export const openApiSpec = {
           max_context_tokens: { type: 'integer', example: 65536 },
           max_input_tokens: { type: 'integer', example: 65536 },
           max_output_tokens: { type: 'integer', example: 8000 },
-          context_limit_source: { type: 'string', enum: ['configured_or_estimated'] },
+          context_limit_source: { type: 'string', enum: ['configured_or_estimated', 'unknown'] },
         },
       },
       Message: {

@@ -27,7 +27,7 @@ export const statusPage = String.raw`<!doctype html>
 </head>
 <body><main>
   <header><div class="brand">Proxy <span>IA</span></div><button id="refresh" type="button">Atualizar status</button></header>
-  <div class="intro"><h1>Status da conexão</h1><p class="muted">Acompanhe o servidor local e a sessão do DeepSeek.</p></div>
+  <div class="intro"><h1>Status da conexão</h1><p class="muted">Acompanhe o servidor local e a sessão do provedor selecionado.</p></div>
   <div id="notice" role="status" hidden></div>
   <section class="panel" id="auth" hidden>
     <h2>Acesso protegido</h2><p class="detail">Informe a chave configurada no proxy para consultar o status. Ela permanece apenas nesta página.</p>
@@ -71,6 +71,7 @@ export const statusPage = String.raw`<!doctype html>
       const states = {
         authenticated:['Conectada','good','Login reconhecido pelo serviço.'],
         login_required:['Login necessário','warn','A sessão precisa ser autenticada novamente.'],
+        rate_limited:['Limite de uso atingido','warn','Login ativo. Aguarde o prazo informado pelo provedor.'],
         suspended:['Conta suspensa','bad','O provedor suspendeu a conta. Os envios estão interrompidos.'],
         not_initialized:['Aguardando navegador','warn','O navegador do proxy ainda não está disponível.'],
         unavailable:['Indisponível','bad','Não foi possível verificar o chat do serviço.']

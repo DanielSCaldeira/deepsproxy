@@ -66,7 +66,19 @@ export async function migrate(db: Database) {
     CREATE UNIQUE INDEX IF NOT EXISTS one_running_operation_account ON operations(account_id) WHERE status='running';
     INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT DO NOTHING;
     COMMIT;`);
+  await db.query(`BEGIN;
+    ALTER TABLE provider_accounts DROP CONSTRAINT IF EXISTS provider_accounts_provider_check;
+    ALTER TABLE provider_accounts ADD CONSTRAINT provider_accounts_provider_check CHECK(provider IN ('deepseek','qwen','chatgpt'));
+    INSERT INTO provider_accounts(id,user_id,provider) SELECT gen_random_uuid(),id,'chatgpt' FROM users ON CONFLICT(user_id,provider) DO NOTHING;
+    INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING;
+    COMMIT;`);
   // Interrupted operations must not remain in progress after gateway replacement.
+  await db.query(`
+    ALTER TABLE account_status ADD COLUMN IF NOT EXISTS authenticated boolean NOT NULL DEFAULT false;
+    ALTER TABLE account_status ADD COLUMN IF NOT EXISTS provider_message text;
+    UPDATE account_status SET authenticated=true WHERE state='authenticated' AND NOT authenticated;
+    INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING;
+  `);
   await db.query("UPDATE operations SET status='failed', error='Serviço reiniciado. Tente novamente.', updated_at=now() WHERE status='running'");
 }
 
@@ -74,10 +86,11 @@ export async function audit(db: Database, actor: string | null, action: string, 
   await db.query('INSERT INTO audit(actor_id,action,subject_id) VALUES($1,$2,$3)', [actor, action, subject]);
 }
 
-export const providers = ['deepseek', 'qwen'] as const;
+export const providers = ['deepseek', 'qwen', 'chatgpt'] as const;
 export type Provider = typeof providers[number];
 export type ProviderAccount = { id: string; user_id: string; provider: Provider };
 export async function ensureAccounts(db: Database, user: string) {
+  await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'chatgpt') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES($1,$1,'deepseek') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
   await db.query("INSERT INTO provider_accounts(id,user_id,provider) VALUES(gen_random_uuid(),$1,'qwen') ON CONFLICT(user_id,provider) DO NOTHING", [user]);
 }

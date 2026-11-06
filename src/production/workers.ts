@@ -20,7 +20,7 @@ export function provisionMessage(status: number, body: any): string {
   return `Não foi possível preparar o navegador${code ? ` (etapa: ${code})` : ''}: ${detail}. ${hint}`;
 }
 type Worker = { id: string; host: string; lastUsed: number; failures: number };
-type Login = { session: string; until: number; release: () => void; close: () => void };
+type Login = { session: string; until: number; release: () => void; close: () => void; finishing?: boolean };
 export class Workers {
   readonly queues = new Map<string, UserQueue>();
   private accountRefs = new Map<string, ProviderAccount>();
@@ -71,6 +71,7 @@ export class Workers {
   async initialize() {
     if (this.db) for (const row of (await this.db.query('SELECT * FROM account_status')).rows) this.snapshots.set(row.account_id, {
       models: row.models, state: row.state, sessionSaved: row.session_saved, checkedAt: row.checked_at, suspendedUntil: row.suspended_until,
+      authenticated: row.authenticated, originalMessage: row.provider_message,
     });
     const { workers } = await this.provision('list');
     for (const w of workers) {
@@ -115,14 +116,17 @@ export class Workers {
         const status = await response.json();
         const raw = status.account || status.deepseek;
         if (!raw) throw new Error('Invalid account status');
-        snapshot = { state: raw.state, sessionSaved: !!raw.sessionSaved, checkedAt: raw.checkedAt, suspendedUntil: raw.suspendedUntil || null };
+        snapshot = { state: raw.state, sessionSaved: !!raw.sessionSaved, checkedAt: raw.checkedAt, suspendedUntil: raw.suspendedUntil || null,
+          authenticated: raw.authenticated === true || raw.state === 'authenticated',
+          originalMessage: typeof raw.originalMessage === 'string' ? raw.originalMessage.slice(0, 4096) : null,
+          confirmationRequired: raw.confirmationRequired === true, nextAllowedAt: raw.nextAllowedAt || null };
         snapshot.models = this.snapshots.get(id)?.models;
         if (raw.state === 'authenticated') {
           const catalog = await this.request(id,'/v1/models',{},false);
           if (catalog?.ok) {
             const data = (await catalog.json()).data;
             const account = await this.account(id);
-            if (Array.isArray(data)) snapshot.models = data.map((m: any) => m.id).filter((m: unknown) => typeof m === 'string' && (account.provider === 'qwen' ? m.startsWith('qwen/') : m.startsWith('deepseek-')));
+            if (Array.isArray(data)) snapshot.models = data.map((m: any) => m.id).filter((m: unknown) => typeof m === 'string' && (account.provider === 'deepseek' ? m.startsWith('deepseek-') : m.startsWith(account.provider + '/')));
           }
         }
         await this.remember(id, snapshot);
@@ -135,9 +139,9 @@ export class Workers {
     this.snapshots.set(id, snapshot);
     if (this.db) {
       const account = await this.account(id);
-      await this.db.query(`INSERT INTO account_status(user_id,account_id,state,session_saved,checked_at,suspended_until,models) VALUES($1,$2,$3,$4,$5,$6,$7)
-      ON CONFLICT(account_id) DO UPDATE SET state=$3,session_saved=$4,checked_at=$5,suspended_until=$6,models=COALESCE($7,account_status.models)`,
-      [account.user_id,id,snapshot.state,snapshot.sessionSaved,snapshot.checkedAt,snapshot.suspendedUntil || null,snapshot.models ? JSON.stringify(snapshot.models) : null]);
+      await this.db.query(`INSERT INTO account_status(user_id,account_id,state,session_saved,checked_at,suspended_until,models,authenticated,provider_message) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT(account_id) DO UPDATE SET state=$3,session_saved=$4,checked_at=$5,suspended_until=$6,models=COALESCE($7,account_status.models),authenticated=$8,provider_message=$9`,
+      [account.user_id,id,snapshot.state,snapshot.sessionSaved,snapshot.checkedAt,snapshot.suspendedUntil || null,snapshot.models ? JSON.stringify(snapshot.models) : null,snapshot.authenticated === true,snapshot.originalMessage || null]);
     }
   }
   async connect(id: string, session: string) {
@@ -160,6 +164,24 @@ export class Workers {
     const login = this.logins.get(id);
     if (!login || login.session !== session || login.until < Date.now()) throw new HttpError(403, 'Abra uma nova conexão pelo painel.');
     return { login, worker: this.workers.get(id)! };
+  }
+  async finishLogin(id: string, session: string) {
+    const { login } = this.remote(id, session);
+    if (login.finishing) throw new HttpError(409, 'A confirmação do login está em andamento.');
+    login.finishing = true;
+    try {
+      const response = await this.request(id, '/internal/finish-login', {
+        method: 'POST', signal: AbortSignal.timeout(120_000),
+      }, false);
+      if (!response?.ok) throw new HttpError(response?.status === 409 ? 409 : 502,
+        'O login ainda não foi confirmado. Conclua o acesso ao chat e clique em Concluir login novamente.', 'login_required');
+      if (this.logins.get(id) !== login) throw new HttpError(409, 'A conexão de login foi encerrada. Conecte novamente pelo painel.');
+      const status = await this.status(id);
+      const confirmed = status.accountState === 'authenticated' || (['suspended','rate_limited'].includes(status.accountState) && status.authenticated === true);
+      if (!confirmed || !status.sessionSaved) throw new HttpError(409,
+        'A sessão ainda não foi validada. Mantenha a tela aberta e tente concluir o login novamente.', 'login_required');
+      this.cancel(id, session);
+    } finally { login.finishing = false; }
   }
   cancel(id: string, session?: string) {
     const login = this.logins.get(id);
@@ -192,6 +214,7 @@ export class Workers {
     for (const [id, login] of this.logins) {
       try {
         if (login.until < Date.now() || !await validSession(login.session)) { this.cancel(id); continue; }
+        if (login.finishing) continue;
         const response = await this.request(id, '/internal/confirm', { method: 'POST' }, false);
         if (response?.ok) this.cancel(id);
       } catch { /* A temporary browser failure is recovered below. */ }

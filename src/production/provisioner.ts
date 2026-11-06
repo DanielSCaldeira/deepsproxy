@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { readFile } from 'node:fs/promises';
 import { containerLogs, docker, DockerError } from './docker.ts';
+import { removeWorkerNetwork } from './network-cleanup.ts';
 import { equal, uuid, workerToken } from './security.ts';
 import { required } from './config.ts';
 import { Mutex } from '../utils/mutex.ts';
@@ -65,16 +66,7 @@ async function stop(id:string,purge=false) {
     if(info.State.Running) { try { await docker('POST',`/containers/${found.Id}/stop?t=25`); } catch(error) { if(!(error instanceof DockerError && error.status===304)) throw error; } }
     await docker('DELETE',`/containers/${found.Id}?force=true`);
   }
-  let networkExists=true;
-  try { await docker('GET',`/networks/${n.network}`); }
-  catch(error) { if(error instanceof DockerError && error.status===404) networkExists=false; else throw error; }
-  if(networkExists) {
-    for(const container of [gateway,egress]) {
-      try { await docker('POST',`/networks/${n.network}/disconnect`,{Container:container,Force:true}); }
-      catch(error) { if(!(error instanceof DockerError && [404,403].includes(error.status))) throw error; }
-    }
-    await ignored404('DELETE',`/networks/${n.network}`);
-  }
+  await removeWorkerNetwork(n.network, [gateway, egress]);
   if(purge) await ignored404('DELETE',`/volumes/${n.volume}`);
 }
 async function describe(id:string) {
@@ -102,7 +94,7 @@ app.post('/:action/:id',async c=>mutex.withLock(async()=> {
   let owner: string;
   try { owner=uuid(body?.user_id); } catch { return c.json({error:'Invalid owner'},400); }
   const provider=body?.provider;
-  if (!['deepseek','qwen'].includes(provider) || body?.id!==id || (provider==='deepseek' && owner!==id) || (provider==='qwen' && owner===id)) return c.json({error:'Invalid account'},400);
+  if (!['deepseek','qwen','chatgpt'].includes(provider) || body?.id!==id || (provider==='deepseek' && owner!==id) || (provider!=='deepseek' && owner===id)) return c.json({error:'Invalid account'},400);
   const current=(await list()).find(w => (w.Labels?.[`${prefix}.account`] || w.Labels?.[`${prefix}.owner`])===id);
   if(current && (current.Labels[`${prefix}.owner`]!==owner || (current.Labels[`${prefix}.provider`] || 'deepseek')!==provider)) return c.json({error:'Account ownership mismatch'},409);
   if(action!=='start') { await stop(id,action==='purge'); return c.json({ok:true}); }

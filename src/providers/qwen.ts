@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from 'playwright';
-import { chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ import { qwenBrowserFetch, qwenResponseJson, type QwenResponse } from './qwen-br
 import { parseQwenStream, qwenModels, qwenPayload } from './qwen-protocol.ts';
 
 const ORIGIN = 'https://chat.qwen.ai';
+const AUTH_ORIGIN = 'https://auth.qwen.ai';
 
 /** One persistent profile/account per isolated process; login is exclusively manual. */
 export class QwenProvider implements ProviderAdapter {
@@ -41,13 +42,15 @@ export class QwenProvider implements ProviderAdapter {
       await pauseBeforeProviderAction('open-browser');
       configureBrowserUserAgent();
       this.context = await chromium.launchPersistentContext(this.directory, {
-        channel: getBrowserChannel(), headless,
-        args: ['--disable-dev-shm-usage', ...(worker ? ['--disable-quic', '--proxy-bypass-list=<-loopback>'] : [])],
+        channel: getBrowserChannel(), headless, locale: BROWSER_LOCALE,
+        // Hide Chromium's automation infobar; site-side detection is independent.
+        ignoreDefaultArgs: ['--enable-automation'],
+        args: [`--lang=${BROWSER_LOCALE}`, '--disable-dev-shm-usage', ...(worker ? ['--disable-quic', '--proxy-bypass-list=<-loopback>'] : [])],
         ...(worker ? { chromiumSandbox: true, acceptDownloads: false, proxy: { server: 'http://egress:3128', bypass: '<-loopback>' } } : {}),
       });
       await this.session.restoreSession(this.context);
       this.context.on('request', request => {
-        if (new URL(request.url()).hostname !== 'chat.qwen.ai') return;
+        if (![ORIGIN, AUTH_ORIGIN].includes(new URL(request.url()).origin)) return;
         const headers = request.headers();
         if (/^Bearer /i.test(headers.authorization || '')) this.token = headers.authorization;
         if (headers.version) this.version = headers.version;
@@ -66,14 +69,19 @@ export class QwenProvider implements ProviderAdapter {
         for (const controller of this.active) controller.abort();
       });
       this.page = await createBrowserPage(this.context);
-      await this.connect();
+      // Restore an existing session on the chat page. The sign-in form is
+      // opened only when the user explicitly connects through the panel.
+      await this.navigate(ORIGIN);
     } catch (error) { await this.close(); throw error; }
   }
   getActivePage(): Page | null { return this.page; }
   async connect(): Promise<void> {
+    await this.navigate(`${ORIGIN}/auth?action=signin`);
+  }
+  private async navigate(url: string): Promise<void> {
     if (!this.page) throw new Error('Qwen browser is not initialized.');
     await pauseBeforeProviderAction('open-chat');
-    await this.page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     this.state = 'login_required';
   }
   private headers(): Record<string, string> {
@@ -81,9 +89,10 @@ export class QwenProvider implements ProviderAdapter {
       ...(this.token ? { authorization: this.token } : {}), ...(this.version ? { version: this.version } : {}),
       'x-request-id': randomUUID() };
   }
-  private async request(route: string, body?: unknown, signal?: AbortSignal): Promise<QwenResponse> {
+  private async request(route: string, body?: unknown, signal?: AbortSignal, origin = ORIGIN): Promise<QwenResponse> {
     if (!this.page || new URL(this.page.url()).origin !== ORIGIN) throw new UpstreamError('Qwen login is required.', 401);
-    const response = await qwenBrowserFetch(this.page, `${ORIGIN}${route}`, this.headers(), body, signal);
+    const headers = { ...this.headers(), ...(origin === AUTH_ORIGIN ? { 'x-request-origin': ORIGIN } : {}) };
+    const response = await qwenBrowserFetch(this.page, `${origin}${route}`, headers, body, signal);
     if (response.status >= 400) {
       await response.cancel();
       if (response.status === 401) { this.state = 'login_required'; this.guard?.block({ state: 'login_required' }); }
@@ -94,8 +103,13 @@ export class QwenProvider implements ProviderAdapter {
   }
   private async validate(signal?: AbortSignal): Promise<void> {
     if (!this.token) throw new UpstreamError('Qwen login is required; complete login in the browser.', 401);
-    const result = await qwenResponseJson(await this.request('/api/v2/users/status', undefined, signal));
-    if (result?.success === false || result?.data?.is_login === false) throw new UpstreamError('Qwen login is required.', 401);
+    // /users/status is frontend telemetry, including for guests. Only the auth
+    // service's successful user response proves this is a signed-in session.
+    const result = await qwenResponseJson(await this.request('/api/v2/auths/', undefined, signal, AUTH_ORIGIN));
+    if (result?.success !== true || typeof result?.data?.id !== 'string' || !result.data.id) {
+      this.state = 'login_required'; this.catalog = undefined;
+      throw new UpstreamError('Qwen login is required; complete login in the browser.', 401);
+    }
     this.state = 'authenticated'; this.checkedAt = new Date().toISOString();
   }
   async confirmLogin(interactive = false): Promise<void> {
@@ -116,7 +130,7 @@ export class QwenProvider implements ProviderAdapter {
     this.guard?.assertAllowed();
     if (this.state === 'authenticated' && this.catalog && Date.now() - this.catalog.checkedAt < 300_000) return this.catalog.models;
     await this.validate();
-    const models = qwenModels(await qwenResponseJson(await this.request('/api/models')));
+    const models = qwenModels(await qwenResponseJson(await this.request('/api/v2/models/')));
     this.catalog = { models, checkedAt: Date.now() };
     return models;
   }

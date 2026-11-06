@@ -11,6 +11,7 @@ const directory = mkdtempSync(path.join(tmpdir(), 'proxy-ia-test-'));
 const env = {
   ...process.env,
   DEEPSEEK_PROFILE_DIR: path.join(directory, 'deepseek'),
+  CHATGPT_PROFILE_DIR: path.join(directory, 'chatgpt'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',
 };

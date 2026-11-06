@@ -3,7 +3,8 @@ import type { ProviderEvent, ProviderModel } from './types.ts';
 /** Only account-supplied IDs are advertised; context size 0 means unknown. */
 export function qwenModels(body: unknown): ProviderModel[] {
   const value = body as any;
-  const models = Array.isArray(value) ? value : value?.data;
+  if (value?.success === false) throw new Error('Qwen rejected the model catalog request.');
+  const models = Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : value?.data?.data;
   if (!Array.isArray(models)) throw new Error('Qwen returned an invalid model catalog.');
   return models.filter(m => typeof m?.id === 'string' && m.id.length > 0).map(m => ({
     id: `qwen/${m.id}`,

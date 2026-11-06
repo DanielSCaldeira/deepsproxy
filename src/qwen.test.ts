@@ -31,6 +31,8 @@ test('Qwen protocol rejects incomplete, invalid and quota responses; abort close
   await assert.rejects(async()=>{ for await (const _ of parseQwenStream(source(),controller.signal)) {} });
   assert.equal(closed,true);
   assert.deepEqual(qwenModels({data:[{id:'account-model',info:{meta:{max_context_length:32000}}}]}),[{id:'qwen/account-model',contextLength:32000}]);
+  assert.deepEqual(qwenModels({success:true,data:{data:[{id:'account-model',info:{meta:{max_context_length:32000}}}]}}),[{id:'qwen/account-model',contextLength:32000}]);
+  assert.throws(()=>qwenModels({success:false,data:{data:[{id:'account-model'}]}}));
   assert.throws(()=>qwenModels({invalid:true}));
   assert.equal(qwenPayload('prompt','test',false,'chat','fid').messages[0].feature_config.thinking_enabled,false);
 });
@@ -44,12 +46,24 @@ test('Qwen browser adapter persists manual login and exposes models and cancella
   const browser=await chromium.launch(); const context=await browser.newContext();
   t.mock.method(providerChromium,'launchPersistentContext',async()=>context);
   const payloads: any[]=[];
+  let authenticated = false;
+  const authRequests: string[] = [];
+  await context.route('https://auth.qwen.ai/**', async route => {
+    const headers = { 'Access-Control-Allow-Origin': 'https://chat.qwen.ai', 'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'authorization,content-type,source,version,x-request-id,x-request-origin' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    assert.equal(new URL(route.request().url()).pathname, '/api/v2/auths/');
+    assert.equal(route.request().headers()['x-request-origin'], 'https://chat.qwen.ai');
+    authRequests.push(route.request().method());
+    return route.fulfill({ headers, contentType: 'application/json', body: JSON.stringify({ success: true,
+      data: authenticated ? { id: 'fixture-user', email: 'fixture@example.com' } : { is_login: false } }) });
+  });
   await context.route('https://chat.qwen.ai/**',async route=>{
     const url=new URL(route.request().url());
     const json=(body:unknown)=>route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
-    if(url.pathname==='/') return route.fulfill({contentType:'text/html',body:'<script>fetch("/api/v2/users/status",{headers:{authorization:"Bearer fixture"}})</script>'});
+    if(url.pathname==='/' || url.pathname==='/auth') return route.fulfill({contentType:'text/html',body:'<script>fetch("/api/v2/users/status",{method:"POST",headers:{authorization:"Bearer fixture"}})</script>'});
     if(url.pathname==='/api/v2/users/status') return json({success:true,data:{is_login:true}});
-    if(url.pathname==='/api/models') return json({data:[{id:'fixture-model',info:{meta:{max_context_length:16000}}}]});
+    if(url.pathname==='/api/v2/models/') return json({success:true,data:{data:[{id:'fixture-model',info:{meta:{max_context_length:16000}}}]}});
     if(url.pathname==='/api/v2/chats/new') return json({data:{id:'fixture-chat'}});
     if(url.pathname==='/api/v2/chat/completions') {
       payloads.push(route.request().postDataJSON());
@@ -60,7 +74,15 @@ test('Qwen browser adapter persists manual login and exposes models and cancella
   const { getProvider }=await import('./providers/registry.ts'); const provider=getProvider();
   try {
     await provider.initialize(true); await context.pages()[0].waitForLoadState('networkidle');
+    assert.equal(new URL(provider.getActivePage()!.url()).pathname, '/', 'startup restores the chat instead of forcing a new sign-in');
+    await provider.connect();
+    assert.equal(new URL(provider.getActivePage()!.url()).pathname, '/auth');
+    await assert.rejects(provider.confirmLogin(true), /Qwen login is required/);
+    assert.equal(await createSessionStore(directory).hasSavedSession(), false, 'guest telemetry must not authenticate or save a session');
+    authenticated = true;
     await provider.confirmLogin(true);
+    assert.ok(authRequests.length >= 2);
+    assert.ok(authRequests.every(method => method === 'GET'));
     assert.equal((await provider.status()).state,'authenticated');
     assert.equal(await createSessionStore(directory).hasSavedSession(),true);
     assert.equal((await provider.models())[0].id,'qwen/fixture-model');

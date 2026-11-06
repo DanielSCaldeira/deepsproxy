@@ -117,7 +117,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
   app.get('/api/me/accounts', async c => {
     await ensureAccounts(db,c.get('identity').id);
     const rows = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[c.get('identity').id])).rows;
-    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:a.provider==='qwen'?'Qwen':'DeepSeek',...await workers.status(a.id),models:await workers.models(a.id)})))});
+    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:a.provider==='qwen'?'Qwen':a.provider==='chatgpt'?'ChatGPT':'DeepSeek',...await workers.status(a.id),models:await workers.models(a.id),manualLoginConfirmation:a.provider==='deepseek'||a.provider==='chatgpt'})))});
   });
   app.get('/api/me/accounts/:provider/status', async c => c.json({...await workers.status((await accountFor(c)).id),models:await workers.models((await accountFor(c)).id)}));
   app.get('/api/me/status', async c => c.json(await workers.status(c.get('identity').id)));
@@ -142,9 +142,10 @@ export function createGateway(db: Database, workers: Workers, config: Production
   });
   app.on('POST', ['/api/me/connection/:action','/api/me/accounts/:provider/connection/:action'], async c => {
     const action = c.req.param('action') || '', who = c.get('identity'), account = await accountFor(c);
-    if (!['connect','cancel','recover','disconnect'].includes(action)) throw new HttpError(404, 'Ação inválida.');
+    if (!['connect','cancel','recover','disconnect','finish'].includes(action)) throw new HttpError(404, 'Ação inválida.');
     limits.take('operation:' + who.id, 15, 60_000);
     if (action === 'cancel') { workers.cancel(account.id, who.session); return c.json({ ok: true }); }
+    if (action === 'finish') workers.remote(account.id, who.session);
     const running = await db.query("SELECT id FROM operations WHERE account_id=$1 AND status='running'", [account.id]);
     if (running.rows.length) throw new HttpError(409, 'Aguarde a operação atual.');
     const id = randomUUID();
@@ -155,6 +156,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
         const current = await identity(c.req.raw.headers);
         if (!current) throw new HttpError(401, 'Sessão encerrada.');
         if (action === 'connect') await workers.connect(account.id, who.session);
+        else if (action === 'finish') await workers.finishLogin(account.id, who.session);
         else { cancelAccountRequests(account.id); await workers.action(account.id, action as 'recover' | 'disconnect'); }
         if (!await identity(c.req.raw.headers)) { workers.cancel(account.id,who.session); await workers.stopAccount(account.id); throw new HttpError(401,'Sessão encerrada.'); }
         await audit(db, who.id, action);
@@ -230,7 +232,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
     limits.take('api:' + user.id, 60, 60_000);
     await ensureAccounts(db,user.id);
     const accounts = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[user.id])).rows;
-    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id)})));
+    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id),manualLoginConfirmation:a.provider==='deepseek'||a.provider==='chatgpt'})));
     if (c.req.path.endsWith('models')) return c.json({object:'list',data:catalogs.flatMap(a => a.models.map((id: string) => ({id,object:'model',created:0,owned_by:a.provider})))});
     let body: any;
     try { body = await c.req.json(); } catch { throw new HttpError(400,'JSON inválido.','invalid_request_error'); }

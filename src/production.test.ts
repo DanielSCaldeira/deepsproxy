@@ -15,6 +15,7 @@ class FakeWorkers extends Workers {
   calls: Array<{id:string;path:string}> = [];
   accounts = new Map<string,string>();
   qwenAccounts = new Set<string>();
+  chatgptAccounts = new Set<string>();
   requestSignals = new Map<string, AbortSignal>();
   override async provision(action:string,id?:string) { return action==='list'?{workers:[]}:{host:`worker-${id}`}; }
   override async request(id:string,path:string,init:RequestInit={},start=true) {
@@ -26,7 +27,7 @@ class FakeWorkers extends Workers {
       const body=JSON.parse(String(init.body));
       return body.stream ? new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}) : Response.json({choices:[{message:{content:'ok'}}]});
     }
-    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
+    if(path==='/v1/models') return Response.json({object:'list',data:[{id:this.chatgptAccounts.has(id)?'chatgpt/auto':this.qwenAccounts.has(id)?'qwen/fixture-model':'deepseek-v4-flash'}]});
     return Response.json({ok:true});
   }
 }
@@ -111,11 +112,18 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     assert.match(await response.text(),/data: \[DONE\]/); assert.equal(workers.queue(aliceId).active,false);
     assert.equal(workers.calls.at(-1)!.id,aliceId);
   });
-  await t.test('two users have two isolated providers; one key routes both and Qwen disconnect preserves DeepSeek',async()=> {
+  await t.test('two users have three isolated providers; one key routes all and Qwen disconnect preserves DeepSeek',async()=> {
     const aliceAccounts=(await (await request('/api/me/accounts','GET',undefined,alice)).json()).accounts;
     const bobAccounts=(await (await request('/api/me/accounts','GET',undefined,bob)).json()).accounts;
-    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['deepseek','qwen']);
-    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,4);
+    assert.deepEqual(aliceAccounts.map((a:any)=>a.provider),['chatgpt','deepseek','qwen']);
+    assert.equal(new Set([...aliceAccounts,...bobAccounts].map((a:any)=>a.id)).size,6);
+    const aliceChatGPT=aliceAccounts.find((a:any)=>a.provider==='chatgpt');
+    assert.equal(aliceChatGPT.name,'ChatGPT'); assert.equal(aliceChatGPT.manualLoginConfirmation,true);
+    workers.chatgptAccounts.add(aliceChatGPT.id);
+    await workers.ensure(aliceChatGPT.id); await workers.status(aliceChatGPT.id);
+    const chatgpt=await request('/v1/chat/completions','POST',{model:'chatgpt/auto',messages:[]},{},{Authorization:'Bearer '+aliceKey});
+    assert.equal(chatgpt.status,200); await chatgpt.text();
+    assert.equal(workers.calls.at(-1)!.id,aliceChatGPT.id);
     const aliceQwen=aliceAccounts.find((a:any)=>a.provider==='qwen').id;
     const bobQwen=bobAccounts.find((a:any)=>a.provider==='qwen').id;
     workers.qwenAccounts.add(aliceQwen); workers.qwenAccounts.add(bobQwen);
@@ -224,6 +232,93 @@ test('idle browsers sleep with saved account status; expired login leases releas
   await workers.tick(async()=>false); assert.equal(workers.isLoggingIn(id),false); assert.equal(workers.queue(id).active,false);
   await workers.connect(id,'another-session');
   now+=1800_001; await workers.tick(async()=>true); assert.equal(workers.isLoggingIn(id),false); assert.equal(workers.queue(id).active,false);
+});
+
+test('manual confirmation requires the login owner, preserves failed attempts and excludes polling during handoff', async () => {
+  const workers = new FakeWorkers(config), id=randomUUID();
+  let allowFinish=false;
+  let releaseFinish: (()=>void) | undefined;
+  let finishStarted: (()=>void) | undefined;
+  const started=new Promise<void>(resolve => { finishStarted=resolve; });
+  const originalRequest=workers.request.bind(workers);
+  workers.request=async (account,path,init={},start=true) => {
+    if(path==='/internal/confirm') return Response.json({}, {status:409});
+    if(path==='/internal/finish-login') {
+      if(!allowFinish) return Response.json({}, {status:409});
+      finishStarted!();
+      await new Promise<void>(resolve => { releaseFinish=resolve; });
+      return Response.json({ok:true});
+    }
+    return originalRequest(account,path,init,start);
+  };
+  workers.accounts.set(id,'login_required');
+  await workers.connect(id,'owner-session');
+  await assert.rejects(workers.finishLogin(id,'another-session'), /nova conexão/);
+  await assert.rejects(workers.finishLogin(id,'owner-session'), /ainda não foi confirmado/);
+  assert.equal(workers.queue(id).active,true);
+  assert.equal(workers.isLoggingIn(id),true);
+  await workers.tick(async()=>true);
+  assert.equal(workers.isLoggingIn(id),true);
+  allowFinish=true;
+  const finishing=workers.finishLogin(id,'owner-session');
+  await started;
+  workers.accounts.set(id,'authenticated');
+  await workers.tick(async()=>true);
+  assert.equal(workers.isLoggingIn(id),true,'polling must not release an in-progress handoff');
+  await assert.rejects(workers.finishLogin(id,'owner-session'), /em andamento/);
+  releaseFinish!();
+  await finishing;
+  assert.equal(workers.isLoggingIn(id),false);
+  assert.equal(workers.queue(id).active,false);
+});
+
+test('restricted login completion requires an authenticated saved session and persists the provider notice', async t => {
+  const pg = await PGlite.create();
+  t.after(() => pg.close());
+  const db: Database = { async query(sql, values) {
+    const result = values ? await pg.query(sql, values) : (await pg.exec(sql)).at(-1)!;
+    return { rows: result.rows as any[], rowCount: result.affectedRows || 0 };
+  } };
+  await migrate(db);
+  const id = randomUUID();
+  await db.query("INSERT INTO users(id,email,role) VALUES($1,'restricted@test.com','user')", [id]);
+  await migrate(db);
+  const workers = new FakeWorkers(config, db);
+  const message = 'Your account has been suspended until November 6, 2026 21:55.';
+  let authenticated = false;
+  let sessionSaved = true;
+  const originalRequest = workers.request.bind(workers);
+  workers.request = async (account, path, init = {}, start = true) => {
+    if (path === '/api/status') return Response.json({ account: {
+      state: 'suspended', authenticated, sessionSaved, originalMessage: message,
+      suspendedUntil: 'November 6, 2026 21:55', checkedAt: new Date().toISOString(),
+    } });
+    return originalRequest(account, path, init, start);
+  };
+  await workers.connect(id, 'owner');
+  await assert.rejects(workers.finishLogin(id, 'owner'), /ainda não foi validada/);
+  assert.equal(workers.isLoggingIn(id), true);
+  authenticated = true;
+  sessionSaved = false;
+  await assert.rejects(workers.finishLogin(id, 'owner'), /ainda não foi validada/);
+  sessionSaved = true;
+  await workers.finishLogin(id, 'owner');
+  assert.equal(workers.isLoggingIn(id), false);
+  assert.equal(workers.queue(id).active, false);
+  const active = await workers.status(id);
+  assert.equal(active.accountState, 'suspended');
+  assert.equal(active.authenticated, true);
+  assert.equal(active.originalMessage, message);
+  await workers.stopUser(id);
+  const restored = new FakeWorkers(config, db);
+  await restored.initialize();
+  const sleeping = await restored.status(id);
+  assert.equal(sleeping.runtimeState, 'sleeping');
+  assert.equal(sleeping.accountState, 'suspended');
+  assert.equal(sleeping.authenticated, true);
+  assert.equal(sleeping.sessionSaved, true);
+  assert.equal(sleeping.originalMessage, message);
+  assert.equal(sleeping.suspendedUntil, 'November 6, 2026 21:55');
 });
 
 test('provisioner failures surface the real cause and the next step', () => {

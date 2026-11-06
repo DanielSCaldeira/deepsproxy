@@ -15,10 +15,11 @@ export function upstreamMessage(body: string): string | null {
 
 export function apiError(error: unknown, code: string) {
   const qwen = process.env.PROVIDER === 'qwen';
-  const service = qwen ? 'Qwen' : 'DeepSeek';
-  const chatUrl = qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
+  const chatgpt = process.env.PROVIDER === 'chatgpt';
+  const service = chatgpt ? 'ChatGPT' : qwen ? 'Qwen' : 'DeepSeek';
+  const chatUrl = chatgpt ? 'https://chatgpt.com/' : qwen ? 'https://chat.qwen.ai/' : 'https://chat.deepseek.com/';
   const originalCode = code;
-  const kind = code.replace(/^(deepseek|qwen)_/, '');
+  const kind = code.replace(/^(deepseek|qwen|chatgpt)_/, '');
   const technical = error instanceof Error ? error.message : String(error);
   const guard = getGenerationGuard().status();
   const stored = ['account_suspended', 'login_required'].includes(kind) ? guard.block?.originalMessage : null;
@@ -46,8 +47,9 @@ export function apiError(error: unknown, code: string) {
     action = `Aguarde a inicialização do navegador do proxy. Se a falha persistir, use Recuperar navegador no card do ${service} no painel do Proxy IA e conecte novamente (${chatUrl}).`;
     url = chatUrl;
   } else {
-    action = 'Verifique a conexão e a disponibilidade do serviço DeepSeek. Aguarde antes de tentar novamente; se persistir, consulte os logs do proxy com a mensagem de erro abaixo.';
+    action = `Verifique a conexão e a disponibilidade do serviço ${service}. Aguarde antes de tentar novamente; se persistir, consulte os logs do proxy com a mensagem de erro abaixo.`;
   }
+  if (chatgpt) action = action.replace(/, com e-mail e senha \(o login pelo Google é bloqueado em navegadores automatizados\)/g, '').replace('Aguarde o status Conectada', 'Clique em Concluir login e aguarde o status Conectada');
   return { error: {
     // Many OpenAI-compatible clients display only message, so it must stand alone.
     message: `${original || technical}\n\nO que fazer: ${action}`,

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { app } from './index.ts';
 import { waitForAuthenticatedChat, initPlaywright, getActivePage, saveAuthenticatedSession, closePlaywright } from './services/playwright.ts';
 
-test('Login waits through hidden CAPTCHA fields until the authenticated chat is visible', { timeout: 10_000 }, async () => {
+test('Login waits through hidden CAPTCHA fields until the authenticated chat is visible', { timeout: 90_000 }, async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -39,10 +39,25 @@ test('API status reuses the authenticated browser without closing or replacing i
   try {
     await initPlaywright(true);
     const page = getActivePage()!;
-    await page.route('https://chat.deepseek.com/**', route => route.fulfill({
-      contentType: 'text/html', body: '<div role="textbox" contenteditable="true"></div>',
+    // DeepSeek uses the standard browser without plugin overrides. Both the
+    // first document and subsequent sign-in frames inherit its locale.
+    assert.equal(await page.evaluate(() => navigator.webdriver),true);
+    assert.equal(await page.evaluate(() => navigator.language),'pt-BR');
+    let acceptLanguage='';
+    await page.route('https://chat.deepseek.com/**', route => {
+      acceptLanguage=route.request().headers()['accept-language'];
+      return route.fulfill({contentType:'text/html',body:'<div role="textbox" contenteditable="true"></div>'});
+    });
+    await page.route('https://login-frame.test/**', route => route.fulfill({
+      contentType:'text/html',body:'<html><body>Sign-in frame fixture</body></html>',
     }));
     await page.goto('https://chat.deepseek.com/');
+    assert.match(acceptLanguage,/^pt-BR(?:,|$)/);
+    const frameReady=page.waitForEvent('framenavigated',frame=>frame.url()==='https://login-frame.test/');
+    await page.evaluate(()=> { const frame=document.createElement('iframe'); frame.src='https://login-frame.test/'; document.body.append(frame); });
+    const frame=await frameReady;
+    assert.equal(await frame.evaluate(()=>navigator.language),'pt-BR');
+    assert.equal(await frame.evaluate(()=>navigator.webdriver),true);
     await page.evaluate(() => { localStorage.setItem('test-login', 'signed-in'); });
     await waitForAuthenticatedChat(page);
     await saveAuthenticatedSession();

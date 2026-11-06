@@ -1,6 +1,6 @@
 import type { Page } from 'playwright';
 
-export type ProviderId = 'deepseek' | 'qwen';
+export type ProviderId = 'deepseek' | 'qwen' | 'chatgpt';
 export type ProviderEvent =
   | { type: 'content' | 'reasoning'; text: string }
   | { type: 'usage'; completionTokens: number }
@@ -15,7 +15,9 @@ export interface ProviderAdapter {
   readonly id: ProviderId;
   models(): Promise<ProviderModel[]>;
   initialize(headless?: boolean): Promise<void>;
-  connect(): Promise<void>;
+  connect(interactive?: boolean): Promise<void>;
+  finishLogin?(): Promise<void>;
+  isReady?(): boolean;
   confirmLogin(interactive?: boolean): Promise<void>;
   status(): Promise<ProviderStatus>;
   close(): Promise<void>;
@@ -23,8 +25,9 @@ export interface ProviderAdapter {
   generate(prompt: string, model: string, thinking: boolean, signal?: AbortSignal): Promise<AsyncIterable<ProviderEvent>>;
 }
 export interface ProviderStatus {
-  state: 'not_initialized' | 'authenticated' | 'login_required' | 'suspended' | 'unavailable';
+  state: 'not_initialized' | 'authenticated' | 'login_required' | 'suspended' | 'rate_limited' | 'unavailable';
   sessionSaved: boolean;
+  authenticated?: boolean;
   checkedAt: string | null;
   [key: string]: unknown;
 }

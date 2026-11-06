@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from './services/browser.ts';
+import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from './services/browser.ts';
 import { initPlaywright } from './services/playwright.ts';
 import { QwenProvider } from './providers/qwen.ts';
 
@@ -52,24 +52,31 @@ test('persistent browser applies stealth before the first document and resets ex
   try {
     for (const userAgent of [undefined, custom, undefined]) {
       configureBrowserUserAgent(userAgent);
-      const context = await chromium.launchPersistentContext(directory, { channel: 'chromium', headless: true, userAgent });
+      const context = await chromium.launchPersistentContext(directory, { channel: 'chromium', headless: true, userAgent, locale: BROWSER_LOCALE });
       try {
         const page = await createBrowserPage(context);
         assert.equal(context.pages().length, 1);
         let sentUserAgent = '';
+        let sentLanguage = '';
         await page.route('https://browser.test/**', route => {
           sentUserAgent = route.request().headers()['user-agent'];
+          sentLanguage = route.request().headers()['accept-language'];
           return route.fulfill({ contentType: 'text/html', body: `<script>
-            window.firstDocument = { webdriver: navigator.webdriver, userAgent: navigator.userAgent };
+            window.firstDocument = { webdriver: navigator.webdriver, userAgent: navigator.userAgent,
+              language: navigator.language, languages: navigator.languages, locale: Intl.DateTimeFormat().resolvedOptions().locale };
           </script>` });
         });
         await page.goto('https://browser.test/');
         const signals = await page.evaluate(() => (window as unknown as {
-          firstDocument: { webdriver: boolean; userAgent: string };
+          firstDocument: { webdriver: boolean; userAgent: string; language: string; languages: string[]; locale: string };
         }).firstDocument);
         assert.equal(signals.webdriver, false);
         assert.doesNotMatch(signals.userAgent, /HeadlessChrome/);
         assert.equal(sentUserAgent, signals.userAgent);
+        assert.equal(signals.language, 'pt-BR');
+        assert.deepEqual(signals.languages, ['pt-BR', 'pt']);
+        assert.equal(signals.locale, 'pt-BR');
+        assert.match(sentLanguage, /^pt-BR(?:,|$)/);
         if (userAgent) assert.equal(signals.userAgent, userAgent);
         else assert.notEqual(signals.userAgent, custom);
       } finally {

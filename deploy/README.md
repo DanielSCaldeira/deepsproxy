@@ -1,5 +1,8 @@
 # Produção
 
+Consulte também o [histórico do diagnóstico de login](../docs/diagnostico-login-2026-11-05.md),
+com resultados positivos, tentativas sem sucesso e os limites das validações.
+
 ## Teste local com autenticação real
 
 Com Docker Desktop iniciado, execute `npm run live` e abra
@@ -11,6 +14,33 @@ Na primeira execução, o token de configuração está no campo `BOOTSTRAP_TOKE
 de `.cache/proxy-ia-live.env`. Configure o acesso local ao painel, clique em
 **Conectar** no DeepSeek ou Qwen e conclua senha, código e desafios diretamente
 na tela remota. Não use a prévia em `3300` para esse teste: ela tem dados fictícios.
+
+No DeepSeek, espere o chat abrir e clique em **Concluir login** no painel.
+Se o provedor mostrar uma suspensão após o login, a confirmação salva a sessão
+e o card mostra **Autenticada · conta bloqueada**, com o aviso e o prazo
+informado. Os envios continuam interrompidos enquanto a conta estiver bloqueada.
+Durante o login, um processo de Chromium no próprio worker recebe as interações
+humanas pela tela remota. Após a confirmação, esse processo salva e fecha seu
+perfil antes de a API abrir a mesma sessão e validá-la. O snapshot anterior
+não sobrescreve esse novo acesso. O polling não conclui esse passo manual.
+Qwen conserva a confirmação automática existente.
+
+O login manual e a API usam a mesma configuração de armazenamento do Chromium.
+O worker solicita o fechamento normal da janela e aguarda a saída do navegador
+para garantir a gravação dos cookies antes de abrir o perfil na API.
+Um marcador no volume preserva o perfil mais recente caso o worker reinicie
+antes de concluir a validação; ele é removido após salvar a sessão validada.
+
+Todo o fluxo funciona entre máquinas diferentes: o cliente só precisa acessar
+o site, enquanto navegador, API e volumes privados ficam no servidor. Nenhum
+perfil do Chrome do computador do cliente é necessário. Preserve os volumes
+de cada conta nas atualizações e nos reinícios.
+
+A imagem Chrome for Testing lê `browser-signin-policy.json` em
+`/etc/opt/chrome_for_testing/policies/managed`. A política `BrowserSignin=0`
+desativa o login no perfil do navegador, mantendo o login dos sites disponível.
+O arquivo completo destinado ao Chrome/Chromium não é aplicado automaticamente
+ao Chrome for Testing: essa variante causou timeout do canal Playwright no ensaio.
 
 `npm run live:status` consulta os serviços. `npm run live:stop` para os serviços
 e os navegadores desse laboratório preservando as sessões salvas. Ao iniciar
@@ -63,10 +93,52 @@ automaticamente. Backups antigos sem manifesto são interpretados como DeepSeek.
 A imagem usada na cópia é resolvida da configuração Compose, inclusive tags
 GHCR; preserve as variáveis de imagem ao executar os scripts.
 
-O egress inclui os hosts de chat/autenticação Qwen e os hosts de assets presentes
-na página pública (`assets.alicdn.com`, `g.alicdn.com`, `img.alicdn.com`). A
-homologação de login real deve confirmar eventuais hosts adicionais de desafios;
-a allowlist continua bloqueando redes privadas e outros destinos.
+O egress inclui os hosts de chat/autenticação Qwen, os hosts de assets observados
+(`assets.alicdn.com`, `g.alicdn.com`, `img.alicdn.com`, `o.alicdn.com`,
+`d.alicdn.com`, `at.alicdn.com`, `alidt.alicdn.com`), os serviços auxiliares
+`aplus.qwen.ai` e `ss.qwen.ai` e as dependências de verificação
+`fourier.alibaba.com`, `fourier.taobao.com`, `sg-wum.alibaba.com` e
+`*.tdum.alibaba.com`. Os subdomínios de `tdum.alibaba.com` usam nomes rotativos.
+Logs do navegador confirmaram bloqueios HTTP 403 do proxy ao carregar esses recursos. Não se deve
+liberar toda a internet para resolver falhas de carregamento: redes privadas e
+destinos não listados continuam bloqueados. Homologue login e geração reais ao
+atualizar as dependências do provedor.
+
+O login opcional do Qwen pelo GitHub permite `github.com`,
+`github.githubassets.com` e `avatars.githubusercontent.com`. Se o Chromium
+mostrar `ERR_TUNNEL_CONNECTION_FAILED` durante o OAuth, consulte o log do
+navegador e valide os destinos no Squid; não libere domínios genéricos ou redes
+internas para contornar a falha.
+
+O login Google também pode usar `accounts.google.com.br` no redirecionamento
+regional `/accounts/SetSID`. Esse host é permitido explicitamente no egress;
+`.google.com` não inclui domínios terminados em `.google.com.br`. A regra
+mantém bloqueados destinos privados, portas não autorizadas e outros hosts.
+
+Falhas de CONNECT agora aparecem nos logs do egress com domínio, porta e status,
+sem caminhos, parâmetros de OAuth, cabeçalhos, cookies ou conteúdo TLS. A rotação
+do Docker mantém dois arquivos de até 10 MB. Para acompanhar:
+
+```sh
+docker compose logs --tail=100 -f egress
+```
+
+O erro Chromium `-111` identifica uma falha de túnel pelo proxy. Correlacione a
+tentativa com o host recusado; uma recusa de atualização ou autofill em segundo
+plano não comprova a causa da falha de autenticação.
+
+O CAPTCHA do login DeepSeek usa `hcaptcha.com` e seus subdomínios, incluindo
+`js.hcaptcha.com`, `api.hcaptcha.com` e hosts de assets variáveis. A regra
+`.hcaptcha.com` segue a [orientação do hCaptcha](https://docs.hcaptcha.com/#content-security-policy-settings)
+para não fixar apenas um host de assets. Um bloqueio do script `1/api.js` causa
+o aviso “Captcha failed to load”. O desafio continua exigindo resolução manual.
+
+O login DeepSeek também solicita `fp-it-acc.portal101.cn/deviceprofile/v4`
+e o SDK de `lf3-data.volccdn.com`, que solicita `gator.volces.com`. Os logs
+mostraram bloqueios HTTP 403 do proxy; a lista permite apenas esses três hosts.
+A liberação corrige o carregamento das dependências, mas a aprovação do
+CAPTCHA continua dependendo do provedor. Não amplie a regra para todos os
+subdomínios de `portal101.cn`, `volccdn.com` ou `volces.com`.
 
 Antes de publicar, valide com contas de homologação: login em ambos os serviços,
 geração, ferramentas, reinício e preservação do perfil DeepSeek. Os testes
@@ -172,6 +244,12 @@ versionado junto da aplicação. Revise e teste atualizações de imagens e do
 Playwright como uma unidade; a construção instala o Chromium da versão exata
 resolvida no lockfile.
 
+Ao atualizar a dependência `playwright`, reconstrua a imagem `worker-image`:
+copiar apenas `dist/` não atualiza o pacote nem os binários do navegador.
+Os workers existentes precisam ser recriados com a imagem nova. No painel,
+**Recuperar navegador** preserva o volume de perfil; **Conectar** inicia o
+navegador atualizado. `npm run live` reconstrói as imagens do laboratório local.
+
 ## Backup e restauração
 
 Execute `sh deploy/backup.sh` a partir da raiz do repositório. O script interrompe
@@ -257,3 +335,27 @@ login completo (incluindo desafios), chaves no Zed/Continue, streaming, expiraç
 de login, queda e retomada do navegador, cinco navegadores ativos, bloqueio de
 redes privadas, suspensão por ociosidade, backup e restauração. A disponibilidade
 e a validade da sessão também dependem do DeepSeek.
+
+
+## Conta ChatGPT
+
+A migração 5 adiciona uma conta `chatgpt` por usuário, preservando os IDs,
+volumes e chaves de DeepSeek e Qwen. O worker recebe `PROVIDER=chatgpt` e
+`PROVIDER_PROFILE_DIR=/profile`; o volume continua identificado pela conta.
+As rotas `/api/me/accounts/chatgpt/status`, `/connection/:action` e
+`/remote-ticket` seguem os mesmos controles de autenticação e propriedade.
+
+Reconstrua as imagens de aplicação/worker e de egress para incluir o adaptador
+e a ACL do ChatGPT, usando o procedimento de atualização deste guia. O card
+ChatGPT abre `https://chatgpt.com/` no navegador remoto; após o login manual,
+clique em **Concluir login**. A sessão é validada antes de disponibilizar o
+catálogo na API. A confirmação antecipada devolve o navegador para o login.
+
+O backup já enumera todas as contas; a restauração passa a aceitar `chatgpt`.
+Os destinos iniciais do proxy são `chatgpt.com`, seus subdomínios,
+`auth.openai.com`, `auth0.openai.com`, `oaistatic.com` e `oaiusercontent.com`.
+Dependências adicionais de login só devem ser acrescentadas após observar
+falhas concretas. Os controles de saída para redes privadas continuam ativos.
+
+Veja [o registro de validação](../docs/chatgpt-integration.md) antes de tratar
+esta integração como validada com uma conta real.

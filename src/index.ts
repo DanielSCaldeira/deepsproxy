@@ -11,6 +11,7 @@ import { createLogger } from './utils/logger.ts';
 import { openApiSpec } from './openapi.ts';
 import { statusPage } from './routes/status.ts';
 import { diagnostic, flushDiagnostics } from './utils/diagnostics.ts';
+import { flushBrowserLogs } from './services/browser-logging.ts';
 
 dotenv.config();
 
@@ -33,8 +34,8 @@ function modelEntry(model: ProviderModel) {
     context_length: dynamicLimit,
     max_context_tokens: dynamicLimit,
     max_input_tokens: dynamicLimit,
-    max_output_tokens: model.maxOutputTokens ?? 8_000,
-    context_limit_source: 'configured_or_estimated',
+    ...(getProvider().id === 'chatgpt' && model.maxOutputTokens === undefined ? {} : { max_output_tokens: model.maxOutputTokens ?? 8_000 }),
+    context_limit_source: dynamicLimit > 0 ? 'configured_or_estimated' : 'unknown',
   };
 }
 
@@ -58,7 +59,8 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-app.get('/health', (c) => process.env.APP_MODE === 'worker' && (!workerReady || !getProvider().getActivePage())
+const browserReady = () => getProvider().isReady?.() ?? !!getProvider().getActivePage();
+app.get('/health', (c) => process.env.APP_MODE === 'worker' && (!workerReady || !browserReady())
   ? c.json({ status: 'starting' }, 503) : c.json({ status: 'ok' }));
 
 if (process.env.APP_MODE === 'worker') {
@@ -66,13 +68,21 @@ if (process.env.APP_MODE === 'worker') {
   app.post('/internal/connect', async c => {
     await getProvider().initialize(false);
     const page = getProvider().getActivePage();
-    if (!page) return c.json({ error: 'browser_unavailable' }, 503);
+    if (!page && !getProvider().isReady?.()) return c.json({ error: 'browser_unavailable' }, 503);
     await getProvider().connect();
     return c.json({ ok: true });
   });
   app.post('/internal/confirm', async c => {
     try { await getProvider().confirmLogin(true); }
     catch { return c.json({ state: (await getProvider().status()).state }, 409); }
+    return c.json({ ok: true });
+  });
+  app.post('/internal/finish-login', async c => {
+    try {
+      const provider = getProvider();
+      if (provider.finishLogin) await provider.finishLogin();
+      else await provider.confirmLogin(true);
+    } catch { return c.json({ error: 'Conclua o login no navegador e clique em Concluir login novamente.' }, 409); }
     return c.json({ ok: true });
   });
 }
@@ -148,7 +158,7 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
   let stopping = false;
   let failures = 0;
   const ensureBrowser = async () => {
-    if (initializing || stopping || getProvider().getActivePage()) return;
+    if (initializing || stopping || browserReady()) return;
     if (process.env.APP_MODE === 'worker' && failures >= 3) return;
     initializing = true;
     diagnostic('browser.recovery', { attempt: failures + 1 });
@@ -156,7 +166,7 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
       await getProvider().initialize(headless);
       if (!headless) {
         const page = getProvider().getActivePage();
-        if (page) await getProvider().connect();
+        if (page) await getProvider().connect(false);
       }
       log.info('Playwright initialized');
       workerReady = true;
@@ -182,8 +192,9 @@ export function startProxyServer(headless = process.env.PLAYWRIGHT_HEADLESS !== 
     diagnostic('process.stopping');
     clearInterval(recovery);
     server.close();
-    await getProvider().confirmLogin().catch(() => undefined);
+    try { await getProvider().confirmLogin(); } catch { /* A pending human login must still close and flush normally. */ }
     await getProvider().close();
+    await flushBrowserLogs();
     await flushDiagnostics();
     process.exit(0);
   };

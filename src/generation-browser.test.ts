@@ -7,6 +7,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { initPlaywright, closePlaywright, getActivePage, getDeepSeekHeaders, getSessionStatus, saveAuthenticatedSession, waitForAuthenticatedChat } from './services/playwright.ts';
 import { GenerationGuard } from './services/generation-guard.ts';
+import { DeepSeekProvider } from './providers/deepseek.ts';
 
 process.env.DEEPSPROXY_ACTION_DELAY_MIN_MS = '0';
 process.env.DEEPSPROXY_ACTION_DELAY_MAX_MS = '0';
@@ -55,6 +56,49 @@ test('localized suspension survives restart, status does not navigate, only vali
     await page.setContent('<textarea></textarea><div role="alert">Your account has been suspended until November 6, 2026 21:55.</div>');
     await assert.rejects(waitForAuthenticatedChat(page), /account is suspended/);
     await assert.rejects(saveAuthenticatedSession(true), /account is suspended/);
+  } finally {
+    await closePlaywright();
+    await fs.rm(directory, { recursive: true, force: true });
+    delete process.env.DEEPSEEK_PROFILE_DIR;
+  }
+});
+
+test('explicit login confirmation saves a restricted account without enabling generation', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'restricted-login-'));
+  process.env.DEEPSEEK_PROFILE_DIR = directory;
+  const provider = new DeepSeekProvider();
+  const message = 'Sua conta está bloqueada até novembro 6, 2026 21:55.';
+  try {
+    await initPlaywright(true);
+    const page = getActivePage()!;
+    await page.route('https://chat.deepseek.com/**', route => route.fulfill({
+      contentType: 'text/html; charset=utf-8', body: `<div role="alert">${message}</div>`,
+    }));
+    // A restriction on a sign-in page does not establish a completed login.
+    await page.goto('https://chat.deepseek.com/sign_in');
+    await assert.rejects(saveAuthenticatedSession(true, { allowSuspended: true }), /account is suspended/);
+    await assert.rejects(fs.access(path.join(directory, '.auth-state.json')), { code: 'ENOENT' });
+    await page.goto('https://chat.deepseek.com/');
+    await page.evaluate(() => localStorage.setItem('owned-session', 'logged-in'));
+    await provider.finishLogin();
+    const status = await provider.status();
+    assert.equal(status.state, 'suspended');
+    assert.equal(status.authenticated, true);
+    assert.equal(status.sessionSaved, true);
+    assert.equal(status.originalMessage, message);
+    assert.equal(status.suspendedUntil, 'novembro 6, 2026 21:55');
+    const saved = JSON.parse(await fs.readFile(path.join(directory, '.auth-state.json'), 'utf8'));
+    assert.equal(saved.origins[0].localStorage.find((item: any) => item.name === 'owned-session').value, 'logged-in');
+    const persisted = new GenerationGuard(path.join(directory, '.generation-state.json'));
+    assert.equal(persisted.status().block?.authenticated, true);
+    assert.throws(() => persisted.assertAllowed(), /account is suspended/);
+    await assert.rejects(getDeepSeekHeaders(), /account is suspended/);
+    await closePlaywright();
+    await initPlaywright(true);
+    const restarted = await provider.status();
+    assert.equal(restarted.state, 'suspended');
+    assert.equal(restarted.authenticated, true);
+    assert.equal(restarted.sessionSaved, true);
   } finally {
     await closePlaywright();
     await fs.rm(directory, { recursive: true, force: true });
