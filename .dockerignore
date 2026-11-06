@@ -11,6 +11,7 @@ gemini_profile
 copilot_profile
 kimi_profile
 mistral_profile
+quillbot_profile
 .cache
 *.pem
 *.key

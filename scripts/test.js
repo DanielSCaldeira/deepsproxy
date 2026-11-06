@@ -19,6 +19,7 @@ const env = {
   COPILOT_PROFILE_DIR: path.join(directory, 'copilot'),
   KIMI_PROFILE_DIR: path.join(directory, 'kimi'),
   MISTRAL_PROFILE_DIR: path.join(directory, 'mistral'),
+  QUILLBOT_PROFILE_DIR: path.join(directory, 'quillbot'),
   QWEN_PROFILE_DIR: path.join(directory, 'qwen'),
   ERNIE_PROFILE_DIR: path.join(directory, 'ernie'),
   DEEPSPROXY_DISABLE_TELEMETRY_PERSIST: '1',
