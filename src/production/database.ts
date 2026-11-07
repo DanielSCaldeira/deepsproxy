@@ -86,6 +86,17 @@ export async function migrate(db: Database) {
     INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING;
   `);
   await db.query("UPDATE operations SET status='failed', error='Serviço reiniciado. Tente novamente.', updated_at=now() WHERE status='running'");
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS provider_credentials (
+      id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider text NOT NULL CHECK(provider IN ('nvidia','openrouter')),
+      ciphertext text NOT NULL, nonce text NOT NULL, auth_tag text NOT NULL,
+      key_version integer NOT NULL DEFAULT 1, masked_suffix text NOT NULL,
+      validated_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(user_id,provider)
+    );
+    INSERT INTO schema_migrations(version) VALUES(7) ON CONFLICT DO NOTHING;
+  `);
 }
 
 export async function audit(db: Database, actor: string | null, action: string, subject: string | null = null) {

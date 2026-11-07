@@ -18,6 +18,7 @@ function showAuth() {
   for (const id of ['key-secret','link-value','audit']) el(id).textContent = '';
   for (const id of ['new-key','share-link']) el(id).hidden = true;
   el('keys').replaceChildren(); el('users').replaceChildren(); el('accounts').replaceChildren(); accountList = []; el('available-models').textContent = ''; remoteProvider = undefined;
+  el('api-connections').replaceChildren();
   loginQueue = undefined; renderQueue();
 }
 function hideRemote() { el('remote-panel').hidden = true; document.body.classList.remove('remote-open'); }
@@ -180,6 +181,12 @@ async function refreshAccounts() {
     const data = await api('/api/me/accounts');
     if (!me) return;
     accountList = data.accounts; renderAccounts(accountList); updateRemoteConfirmation(); renderQueue();
+    renderApiConnections(data.apiConnections || []);
+    const apiModels = (data.apiConnections || []).flatMap(c => c.models || []).map(m => m.id);
+    if (apiModels.length) {
+      const webModels = accountList.filter(a => a.accountState === 'authenticated').flatMap(a => a.models || []).map(m => typeof m === 'string' ? m : m.id);
+      el('available-models').textContent = [...webModels,...apiModels].join(', ');
+    }
     const selected = accountList.find(account => account.provider === (disconnectedProvider || remoteProvider));
     if (selected && !selected.loginActive && (rfb || disconnectedProvider === selected.provider)) {
       closeRemote();
@@ -192,6 +199,50 @@ async function refreshAccounts() {
 async function keys() {
   const data = await api('/api/me/keys'); el('keys').replaceChildren();
   for (const key of data.keys) { const row = document.createElement('tr'); textCell(row,key.name); textCell(row,key.prefix + '…'); textCell(row,key.revoked_at ? 'Revogada' : 'Ativa'); const actions = textCell(row,''); if (!key.revoked_at) button(actions,'Revogar',async () => { if (confirm('Revogar esta chave? Os aplicativos que a usam perderão o acesso.')) { await api('/api/me/keys/' + key.id,'DELETE'); await keys(); } },true); el('keys').append(row); }
+}
+function renderApiConnections(connections) {
+  const container = el('api-connections');
+  if (container.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.value) return;
+  container.replaceChildren();
+  for (const connection of connections) {
+    const card = document.createElement('article'); card.className = 'account-row'; card.dataset.apiProvider = connection.provider;
+    const title = document.createElement('h3'); title.textContent = connection.name; card.append(title);
+    const status = document.createElement('p');
+    status.textContent = !connection.enabled ? 'O administrador precisa configurar a cifragem das chaves API.' : !connection.configured ? 'Nenhuma chave cadastrada.' : 'Chave …' + connection.maskedSuffix + (connection.validatedAt ? ' · Geração validada em ' + new Date(connection.validatedAt).toLocaleString('pt-BR') : ' · Geração ainda não validada.');
+    card.append(status);
+    const help = document.createElement('a'); help.textContent = 'Como obter chave'; help.href = connection.provider === 'nvidia' ? 'https://build.nvidia.com/settings/api-keys' : 'https://openrouter.ai/keys'; help.target = '_blank'; help.rel = 'noopener noreferrer'; card.append(help);
+    const form = document.createElement('form'); form.className = 'inline';
+    const input = document.createElement('input'); input.type = 'password'; input.autocomplete = 'off'; input.maxLength = 512; input.required = true; input.placeholder = connection.configured ? 'Nova chave para substituir a atual' : 'Cole a chave API'; input.setAttribute('aria-label','Chave ' + connection.name); input.disabled = !connection.enabled;
+    const showSavedKey = () => { if (connection.configured && !input.value) { input.value = '************'; input.dataset.savedKey = 'true'; } };
+    showSavedKey();
+    input.addEventListener('focus', () => { if (input.dataset.savedKey === 'true') { input.value = ''; input.dataset.savedKey = 'false'; } });
+    input.addEventListener('input', () => { input.dataset.savedKey = 'false'; });
+    input.addEventListener('blur', showSavedKey);
+    const submit = document.createElement('button'); submit.textContent = connection.configured ? 'Substituir chave' : 'Salvar chave'; submit.disabled = !connection.enabled;
+    form.append(input,submit); form.addEventListener('submit', event => { event.preventDefault(); void guarded(async () => {
+      if (input.dataset.savedKey === 'true') { notice('A chave já está salva. Clique no campo e digite uma nova chave para substituí-la.'); return; }
+      const apiKey = input.value; input.value = '';
+      await api('/api/me/provider-credentials/' + connection.provider,'PUT',{apiKey});
+      input.blur(); await refresh(true); notice('Chave salva cifrada. Selecione um modelo gratuito e valide a geração.');
+    }); }); card.append(form);
+    if (connection.error) { const error = document.createElement('p'); error.textContent = connection.error; card.append(error); }
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const select = document.createElement('select'); select.setAttribute('aria-label','Modelo gratuito ' + connection.name);
+    for (const model of connection.models || []) { const option = document.createElement('option'); option.value = model.id; option.textContent = model.id; select.append(option); }
+    if (select.options.length) card.append(select);
+    if (connection.configured && connection.enabled) {
+      button(actions,'Atualizar modelos',async () => { await api('/api/me/provider-credentials/' + connection.provider + '/models','POST',{}); await refresh(true); });
+      if (select.options.length) button(actions,'Validar geração gratuita',async () => {
+        notice('Testando uma geração curta. Ela consome a cota gratuita.');
+        await api('/api/me/provider-credentials/' + connection.provider + '/validate','POST',{model:select.value});
+        select.blur(); await refresh(true); notice('Geração gratuita validada. Você já pode gerar sua chave dsp_ para o aplicativo.');
+      });
+      if (connection.provider === 'openrouter') button(actions,'Consultar cota',async () => { const {daily} = await api('/api/me/provider-credentials/openrouter/limits'); notice(daily ? 'Cota diária: ' + daily.remaining + ' restantes de ' + daily.limit + ' chamadas.' : 'O provedor não informou a cota restante.'); });
+      button(actions,'Remover chave',async () => { await api('/api/me/provider-credentials/' + connection.provider,'DELETE'); await refresh(true); notice('Chave removida do Proxy IA. Para revogá-la também no provedor, use o site dele.'); },true);
+    }
+    card.append(actions); container.append(card);
+    if (busy) for (const button of card.querySelectorAll('button')) button.disabled = true;
+  }
 }
 async function users() {
   const health = await api('/api/admin/status'); el('admin-health').textContent = 'Banco disponível · ' + health.activeBrowsers + ' de ' + health.capacity + ' navegadores ativos · ' + health.remoteLogins + ' login(s) em andamento.';

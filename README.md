@@ -9,6 +9,13 @@ O [histórico do diagnóstico de login](docs/diagnostico-login-2026-11-05.md)
 registra as alterações, o que funcionou, as tentativas que falharam, as
 evidências dos testes e a validação real que ainda está pendente.
 
+## APIs gratuitas
+
+O painel também aceita chaves NVIDIA e OpenRouter, cifradas por usuário.
+Somente endpoints gratuitos confirmados são anunciados e aceitos pelo servidor;
+modelos pagos, plugins tarifados e fallback pago ficam bloqueados.
+Veja [configuração, limites e testes](docs/apis-gratuitas.md).
+
 ## ChatGPT web
 
 No painel **Minhas contas**, use o card **ChatGPT**, faça login manualmente na

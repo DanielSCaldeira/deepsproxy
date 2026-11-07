@@ -1,5 +1,10 @@
 # Roadmap de provedores — integração com sites de chat de IA
 
+O [plano de APIs oficiais e opções gratuitas](plano-apis-gratuitas.md)
+complementa este roadmap com OpenRouter, NVIDIA API Catalog e DeepSeek API
+opcional. Inclui pesquisa de condições de uso, criação de chaves, arquitetura,
+etapas e critérios de aceite; essas novas integrações ainda não foram implementadas.
+
 O Proxy IA integra os sites de chat listados abaixo. Cada integração segue o
 [guia de novos provedores](guia-novos-provedores.md): inspeção do site, adaptador
 no contrato comum, registro em todas as camadas, login pela tela remota do painel

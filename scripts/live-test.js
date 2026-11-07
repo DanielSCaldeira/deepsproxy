@@ -12,6 +12,11 @@ catch(error) {
   const secret=()=>randomBytes(32).toString('hex');
   await writeFile(envPath,`DOMAIN=localhost\nPOSTGRES_PASSWORD=${secret()}\nBOOTSTRAP_TOKEN=${secret()}\nPROVISIONER_TOKEN=${secret()}\nWORKER_MASTER_SECRET=${secret()}\nMAX_ACTIVE_BROWSERS=2\nDEEPSPROXY_IMAGE_TAG=live\n`,{mode:0o600,flag:'wx'});
 }
+// Upgrade existing local labs without changing their database/browser secrets.
+const liveEnv = await readFile(envPath, 'utf8');
+if (!/^PROVIDER_CREDENTIALS_KEY=.+$/m.test(liveEnv)) {
+  await writeFile(envPath, liveEnv.replace(/^PROVIDER_CREDENTIALS_KEY=.*\r?\n?/gm, '') + '\nPROVIDER_CREDENTIALS_KEY=' + randomBytes(32).toString('base64') + '\n', { mode: 0o600 });
+}
 const args=['compose','--env-file',fileURLToPath(envPath),'-f','compose.live.yml'];
 function docker(extra) {
   const result=spawnSync('docker',[...args,...extra],{cwd:root,stdio:'inherit'});

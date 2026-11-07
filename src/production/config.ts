@@ -4,6 +4,8 @@ export function required(name: string): string {
   return value;
 }
 export function productionConfig() {
+  const credentialsKey = process.env.PROVIDER_CREDENTIALS_KEY || undefined;
+  if (credentialsKey && (!/^[A-Za-z0-9+/]{43}=$/.test(credentialsKey) || Buffer.from(credentialsKey, 'base64').length !== 32)) throw new Error('PROVIDER_CREDENTIALS_KEY must encode 32 bytes in Base64');
   const origin = new URL(required('PUBLIC_ORIGIN'));
   const localLive = process.env.LOCAL_LIVE_TEST === '1' && origin.protocol === 'http:' && origin.hostname === 'localhost';
   if ((!localLive && origin.protocol !== 'https:') || origin.origin !== process.env.PUBLIC_ORIGIN) throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without trailing slash (local live tests allow http://localhost only)');
@@ -14,6 +16,6 @@ export function productionConfig() {
   if (!Number.isInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 20) throw new Error('Invalid MAX_ACTIVE_BROWSERS');
   return { origin: origin.origin, database: required('DATABASE_URL'), bootstrap: required('BOOTSTRAP_TOKEN'),
     provisioner: process.env.PROVISIONER_URL || 'http://provisioner:3001', provisionerToken: required('PROVISIONER_TOKEN'),
-    workerMaster: required('WORKER_MASTER_SECRET'), maxWorkers };
+    workerMaster: required('WORKER_MASTER_SECRET'), maxWorkers, credentialsKey };
 }
-export type ProductionConfig = ReturnType<typeof productionConfig>;
+export type ProductionConfig = Omit<ReturnType<typeof productionConfig>, 'credentialsKey'> & { credentialsKey?: string };

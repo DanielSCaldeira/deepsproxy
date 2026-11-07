@@ -7,6 +7,8 @@ import { digest, email, equal, hashPassword, HttpError, password, RateLimit, sec
 import type { ProductionConfig } from './config.ts';
 import { Workers } from './workers.ts';
 import { panelPage } from './panel.ts';
+import { ProviderCredentials, apiProvider, apiProviders } from './provider-credentials.ts';
+import { FreeApis } from '../api-providers/free-api.ts';
 
 const providerNames: Record<string, string> = { deepseek: 'DeepSeek', qwen: 'Qwen', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', copilot: 'Copilot', mistral: 'Mistral', grok: 'Grok', meta: 'Meta AI', cohere: 'Cohere', perplexity: 'Perplexity', kimi: 'Kimi', quillbot: 'QuillBot', ernie: 'Ernie' };
 // Providers whose login is confirmed by the user in the panel ('Concluir login').
@@ -14,8 +16,10 @@ const manualLoginProviders = new Set<string>(['deepseek', 'qwen', 'chatgpt', 'cl
 
 type Identity = { id: string; email: string; role: string; session: string; csrf: string };
 type Env = { Variables: { identity: Identity } };
-export function createGateway(db: Database, workers: Workers, config: ProductionConfig) {
+export function createGateway(db: Database, workers: Workers, config: ProductionConfig, officialFetch: typeof fetch = fetch) {
   const app = new Hono<Env>();
+  const credentials = new ProviderCredentials(db,config.credentialsKey);
+  const official = new FreeApis(credentials,officialFetch);
   const limits = new RateLimit();
   let passwordChecks = 0;
   async function passwordCheck<T>(run:()=>Promise<T>):Promise<T> {
@@ -112,6 +116,53 @@ export function createGateway(db: Database, workers: Workers, config: Production
     deleteCookie(c, cookie, { path: '/', secure: true }); return c.json({ ok: true });
   });
   app.get('/api/me', c => { const { id, email, role, csrf } = c.get('identity'); return c.json({ id, email, role, csrf }); });
+  const credentialScope = (user: string, provider: string) => `api:${user}:${provider}`;
+  app.get('/api/me/provider-credentials', async c => c.json({ enabled: credentials.enabled, credentials: await credentials.list(c.get('identity').id) }));
+  app.on(['GET','PUT','DELETE'], '/api/me/provider-credentials/:provider', async c => {
+    const provider = apiProvider(c.req.param('provider')), user = c.get('identity').id;
+    if (c.req.method === 'GET') return c.json({ credential: (await credentials.list(user)).find(row => row.provider === provider) || null, enabled: credentials.enabled });
+    limits.take('credential:' + user,20,60_000);
+    if (c.req.method === 'PUT') {
+      let body; try { body = await c.req.json(); } catch { throw new HttpError(400,'JSON inválido.'); }
+      await credentials.save(user,provider,body?.apiKey);
+    } else await credentials.remove(user,provider);
+    cancelAccountRequests(credentialScope(user,provider)); official.invalidate(user,provider);
+    await audit(db,user,c.req.method === 'PUT' ? 'provider_credential_saved' : 'provider_credential_removed');
+    return c.json({ ok: true });
+  });
+  app.post('/api/me/provider-credentials/:provider/models', async c => {
+    const provider = apiProvider(c.req.param('provider')), user = c.get('identity').id;
+    limits.take('catalog:' + user,10,60_000);
+    return c.json({ models: await official.models(user,provider,true) });
+  });
+  app.post('/api/me/provider-credentials/:provider/validate', async c => {
+    const provider = apiProvider(c.req.param('provider')), user = c.get('identity').id;
+    limits.take('validate:' + user,5,60_000);
+    const body = await c.req.json();
+    const controller = new AbortController(), scope = credentialScope(user,provider);
+    const set = accountActive.get(scope) || new Set<AbortController>(); set.add(controller); accountActive.set(scope,set);
+    const userSet = active.get(user) || new Set<AbortController>(); userSet.add(controller); active.set(user,userSet);
+    const abort = () => controller.abort(); c.req.raw.signal.addEventListener('abort',abort,{once:true});
+    if (c.req.raw.signal.aborted) abort();
+    let release: (() => void) | undefined;
+    try {
+      release = await official.queue(user,provider).acquire(controller.signal);
+      if (!await identity(c.req.raw.headers)) throw new HttpError(401,'Sessão encerrada.');
+      const before = await credentials.load(user,provider);
+      const response = await official.generate(user,provider,{ model: body?.model, messages: [{ role: 'user', content: 'Reply OK.' }], max_tokens: 64, stream: false },controller.signal);
+      if (!response.ok) return new Response(await response.text(),{status:response.status,headers:response.headers});
+      const data = await response.json();
+      if (!Array.isArray(data.choices) || !data.choices.length || !data.choices[0].message || data.error) throw new HttpError(502,'A geração de teste não foi confirmada.');
+      await credentials.validated(user,provider,before.revision);
+      await audit(db,user,'provider_credential_validated');
+      return c.json({ ok: true, message: 'Geração gratuita confirmada. O teste consumiu a cota gratuita.' });
+    } finally {
+      release?.(); set.delete(controller); if (!set.size) accountActive.delete(scope);
+      userSet.delete(controller); if (!userSet.size) active.delete(user);
+      c.req.raw.signal.removeEventListener('abort',abort);
+    }
+  });
+  app.get('/api/me/provider-credentials/openrouter/limits', async c => c.json({ daily: await official.limits(c.get('identity').id) }));
   async function accountFor(c: Context<Env>) {
     const provider = c.req.param('provider') || 'deepseek';
     if (!providers.includes(provider as any)) throw new HttpError(404,'Provedor não encontrado.');
@@ -122,7 +173,14 @@ export function createGateway(db: Database, workers: Workers, config: Production
   app.get('/api/me/accounts', async c => {
     await ensureAccounts(db,c.get('identity').id);
     const rows = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[c.get('identity').id])).rows;
-    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:providerNames[a.provider]??a.provider,...await workers.status(a.id),models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider)})))});
+    const user = c.get('identity').id, saved = await credentials.list(user);
+    const apiConnections = await Promise.all(apiProviders.map(async provider => {
+      const stored = saved.find(row => row.provider === provider);
+      let models: unknown[] = [], error: string | undefined;
+      if (credentials.enabled && stored) try { models = await official.models(user,provider); } catch { error = 'Não foi possível confirmar os modelos gratuitos. Atualize o catálogo ou verifique a chave.'; }
+      return { provider, name: provider === 'nvidia' ? 'NVIDIA API' : 'OpenRouter API', configured: !!stored, enabled: credentials.enabled, maskedSuffix: stored?.masked_suffix, validatedAt: stored?.validated_at, models, error };
+    }));
+    return c.json({accounts:await Promise.all(rows.map(async a => ({...a,name:providerNames[a.provider]??a.provider,...await workers.status(a.id),models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider)}))),apiConnections});
   });
   app.get('/api/me/accounts/:provider/status', async c => c.json({...await workers.status((await accountFor(c)).id),models:await workers.models((await accountFor(c)).id)}));
   app.get('/api/me/status', async c => c.json(await workers.status(c.get('identity').id)));
@@ -132,7 +190,8 @@ export function createGateway(db: Database, workers: Workers, config: Production
     await ensureAccounts(db,who.id);
     const accounts = (await db.query('SELECT id FROM provider_accounts WHERE user_id=$1',[who.id])).rows;
     const connected = await Promise.all(accounts.map(async a => !workers.isLoggingIn(a.id) && (await workers.status(a.id)).accountState === 'authenticated'));
-    if (!connected.some(Boolean)) throw new HttpError(409, 'Conecte uma conta antes de gerar uma chave.');
+    const apiConnected = credentials.enabled && (await credentials.list(who.id)).some(row => row.validated_at);
+    if (!connected.some(Boolean) && !apiConnected) throw new HttpError(409, 'Conecte uma conta ou valide uma chave API antes de gerar uma chave.');
     const body = await c.req.json();
     if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 80) throw new HttpError(400, 'Informe um nome de até 80 caracteres.');
     const key = 'dsp_' + secret(), id = randomUUID();
@@ -240,13 +299,18 @@ export function createGateway(db: Database, workers: Workers, config: Production
     limits.take('api:' + user.id, 60, 60_000);
     await ensureAccounts(db,user.id);
     const accounts = (await db.query('SELECT id,provider FROM provider_accounts WHERE user_id=$1 ORDER BY provider',[user.id])).rows;
-    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider)})));
+    const catalogs = await Promise.all(accounts.map(async a => ({...a,models:await workers.models(a.id),manualLoginConfirmation:manualLoginProviders.has(a.provider),api:false})));
+    const apiModels = await official.catalog(user.id);
+    for (const provider of apiProviders) {
+      const models = apiModels.filter(m => m.id.startsWith(provider + '/')).map(m => m.id);
+      if (models.length) catalogs.push({id:credentialScope(user.id,provider),provider,models,manualLoginConfirmation:false,api:true});
+    }
     if (c.req.path.endsWith('models')) return c.json({object:'list',data:catalogs.flatMap(a => a.models.map((id: string) => ({id,object:'model',created:0,owned_by:a.provider})))});
     let body: any;
     try { body = await c.req.json(); } catch { throw new HttpError(400,'JSON inválido.','invalid_request_error'); }
     const account = catalogs.find(a => a.models.includes(body?.model));
     if (!account) throw new HttpError(400,'Modelo desconhecido ou indisponível.','invalid_model');
-    if (workers.isLoggingIn(account.id)) throw new HttpError(409, 'Conclua o login pelo painel.', account.provider + '_login_in_progress');
+    if (!account.api && workers.isLoggingIn(account.id)) throw new HttpError(409, 'Conclua o login pelo painel.', account.provider + '_login_in_progress');
     const controller = new AbortController(), requestSet = active.get(user.id) || new Set<AbortController>();
     requestSet.add(controller); active.set(user.id,requestSet);
     const keySet = keyActive.get(user.key_id) || new Set<AbortController>();
@@ -259,17 +323,17 @@ export function createGateway(db: Database, workers: Workers, config: Production
     let cleaned = false;
     const cleanup = () => { if (cleaned) return; cleaned = true; release?.(); requestSet.delete(controller); if (!requestSet.size) active.delete(user.id); keySet.delete(controller); if (!keySet.size) keyActive.delete(user.key_id); accountSet.delete(controller); if (!accountSet.size) accountActive.delete(account.id); c.req.raw.signal.removeEventListener('abort',abort); };
     try {
-      release = await workers.queue(account.id).acquire(controller.signal);
+      release = await (account.api ? official.queue(user.id,apiProvider(account.provider)) : workers.queue(account.id)).acquire(controller.signal);
       await apiIdentity(c); // A queued request may have been revoked while waiting.
-      if (workers.isLoggingIn(account.id)) throw new HttpError(409,'Conclua o login pelo painel.');
-      const response = await workers.request(account.id,c.req.path,{ method:c.req.method, body:JSON.stringify(body), signal:controller.signal });
+      if (!account.api && workers.isLoggingIn(account.id)) throw new HttpError(409,'Conclua o login pelo painel.');
+      const response = account.api ? await official.generate(user.id,apiProvider(account.provider),body,controller.signal) : await workers.request(account.id,c.req.path,{ method:c.req.method, body:JSON.stringify(body), signal:controller.signal });
       if (!response?.body) throw new HttpError(502,'Navegador indisponível.');
       const reader = response.body.getReader();
       const stream = new ReadableStream<Uint8Array>({
         async pull(out) { try { const item = await reader.read(); if (item.done) { cleanup(); out.close(); } else out.enqueue(item.value); } catch(error) { cleanup(); out.error(error); } },
         async cancel() { controller.abort(); await reader.cancel().catch(()=>{}); cleanup(); },
       });
-      return new Response(stream,{status:response.status,headers:{'Content-Type':response.headers.get('Content-Type') || 'application/json','Cache-Control':'no-store','X-Accel-Buffering':'no'}});
+      return new Response(stream,{status:response.status,headers:{'Content-Type':response.headers.get('Content-Type') || 'application/json','Cache-Control':'no-store','X-Accel-Buffering':'no',...(response.headers.has('Retry-After') ? {'Retry-After':response.headers.get('Retry-After')!} : {})}});
     } catch(err) { cleanup(); throw err; }
   });
   async function authorizeRemote(headers: Headers, token: string, origin: string) {
