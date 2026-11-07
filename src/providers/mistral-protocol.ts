@@ -94,7 +94,9 @@ function visibleText(message: any): string {
   if (Array.isArray(message.contentChunks)) return message.contentChunks
     .filter((chunk: any) => chunk && chunk.type === 'text' && typeof chunk.text === 'string')
     .map((chunk: any) => chunk.text).join('');
-  return typeof message.content === 'string' ? message.content : '';
+  // The legacy aggregate `content` also contains hidden thinking while the
+  // typed chunks are being initialized. It is not a safe answer fallback.
+  return '';
 }
 
 /** Decode the frontend generation stream (`/api/chat`) into provider events. */

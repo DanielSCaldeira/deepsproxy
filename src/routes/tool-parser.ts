@@ -3,7 +3,7 @@ import { validateAgainstSchema } from '../tools/schema.ts';
 
 export class ToolCallError extends Error {
   constructor() {
-    super('DeepSeek returned an invalid or incomplete tool call, or did not follow tool_choice.');
+    super('The provider returned an invalid or incomplete tool call, or did not follow tool_choice.');
     this.name = 'ToolCallError';
   }
 }

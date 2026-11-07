@@ -17,6 +17,9 @@ export function installClaudeCapture(): void {
     let matching = false;
     try {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (capture && !capture.claimed && url.origin === location.origin &&
+          url.pathname === '/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction')
+        capture.renderedTransport = true;
       const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
       const candidate = !!capture && !capture.claimed && method === 'POST' && url.origin === location.origin &&
         /^\/api\/organizations\/[^/]+\/chat_conversations\/[^/]+\/completion2?$/.test(url.pathname);

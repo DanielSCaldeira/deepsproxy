@@ -256,6 +256,20 @@ test('production: PostgreSQL auth, account isolation, API keys and lifecycle', a
     await assert.rejects(()=>gateway.authorizeRemote(new Headers({Cookie:alice.cookie!}),ticket3,'https://evil.test'));
     await request('/api/me/connection/cancel','POST',{},alice); assert.equal(workers.queue(aliceId).active,false);
   });
+  await t.test('revoking one key leaves calls using another key active', async () => {
+    const qwen = (await db.query("SELECT id FROM provider_accounts WHERE user_id=$1 AND provider='qwen'", [aliceId])).rows[0].id;
+    workers.accounts.set(qwen, 'authenticated'); workers.qwenAccounts.add(qwen);
+    await workers.ensure(qwen); await workers.status(qwen);
+    const created = await (await request('/api/me/keys', 'POST', {name:'isolated test key'}, alice)).json();
+    const first = await request('/v1/chat/completions', 'POST', {model:'deepseek-v4-flash', messages:[],stream:true}, {}, {Authorization:'Bearer '+aliceKey});
+    const second = await request('/v1/chat/completions', 'POST', {model:'qwen/fixture-model', messages:[],stream:true}, {}, {Authorization:'Bearer '+created.key});
+    assert.equal(first.status, 200); assert.equal(second.status, 200);
+    await request('/api/me/keys/'+created.id, 'DELETE', undefined, alice);
+    assert.equal(workers.requestSignals.get(qwen)!.aborted, true);
+    assert.equal(workers.requestSignals.get(aliceId)!.aborted, false);
+    await first.text(); await second.body?.cancel();
+    await db.query('DELETE FROM api_keys WHERE id=$1', [created.id]);
+  });
   await t.test('revocation and blocking stop access immediately',async()=> {
     const id=(await (await request('/api/me/keys','GET',undefined,alice)).json()).keys[0].id;
     assert.equal((await request('/api/me/keys/'+id,'DELETE',undefined,alice)).status,200);
@@ -314,6 +328,40 @@ test('release frees an idle browser early but keeps browsers with queued calls',
   done();
   assert.equal(await workers.release(first),true);
   await workers.ensure(second); // capacity was freed for the next account
+});
+
+test('an in-flight supervisor health failure never resurrects a released browser', async () => {
+  const workers = new FakeWorkers(config), id = randomUUID();
+  const original = workers.request.bind(workers);
+  let rejectHealth!: (error: Error) => void, healthStarted!: () => void;
+  const started = new Promise<void>(resolve => { healthStarted = resolve; });
+  workers.request = async (account, path, init = {}, start = true) => {
+    if (path === '/health') { healthStarted(); return new Promise<Response>((_resolve, reject) => { rejectHealth = reject; }); }
+    return original(account, path, init, start);
+  };
+  await workers.ensure(id);
+  const tick = workers.tick(async () => true);
+  await started;
+  assert.equal(await workers.release(id), true);
+  rejectHealth(new Error('Old worker stopped'));
+  await tick;
+  assert.equal(workers.metrics().activeBrowsers, 0);
+});
+
+test('status from an old browser cannot replace the saved login after release', async () => {
+  const workers = new FakeWorkers(config), id = randomUUID();
+  await workers.ensure(id); await workers.status(id);
+  let resolveStatus!: (response: Response) => void, statusStarted!: () => void;
+  const started = new Promise<void>(resolve => { statusStarted = resolve; });
+  const original = workers.request.bind(workers);
+  workers.request = async (account, path, init = {}, start = true) => {
+    if (path === '/api/status') { statusStarted(); return new Promise<Response>(resolve => { resolveStatus = resolve; }); }
+    return original(account, path, init, start);
+  };
+  const status = workers.status(id); await started; await workers.release(id);
+  resolveStatus(Response.json({account:{state:'login_required',authenticated:false}}));
+  assert.equal((await status).accountState, 'authenticated');
+  assert.equal((await workers.status(id)).runtimeState, 'sleeping');
 });
 
 test('idle browsers sleep with saved account status; expired login leases release the queue',async t=> {

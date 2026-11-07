@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel, readCopiedResponse } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
 import { InteractiveBrowser } from '../services/interactive-browser.ts';
 import { getGenerationGuard, retryAfterMilliseconds, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
@@ -259,7 +259,8 @@ export class ClaudeProvider implements ProviderAdapter {
         interaction = 'selecting model'; await this.selectModel(model); controller.signal.throwIfAborted();
         await pauseBeforeProviderAction('send-message');
         await page!.evaluate(({ prompt, model }) => {
-          (globalThis as any).__proxyClaude = { prompt, model, chunks: [], bytes: 0, claimed: false, done: false };
+          (globalThis as any).__proxyClaude = { prompt, model, chunks: [], bytes: 0, claimed: false, done: false,
+            beforeReplies: new Set(document.querySelectorAll('[data-testid="assistant-message"]')) };
         }, { prompt, model: model.slice('claude/'.length) });
         interaction = 'focusing editor'; await editor.click({ timeout: 10_000 });
         interaction = 'filling editor'; await editor.fill(prompt, { timeout: 10_000 });
@@ -281,19 +282,34 @@ export class ClaudeProvider implements ProviderAdapter {
             const c = (globalThis as any).__proxyClaude;
             if (!c) throw new Error('Claude capture unavailable.');
             const chunks: string[] = c.chunks.splice(0); c.bytes = 0;
-            return { chunks, claimed: !!c.claimed, done: !!c.done, error: c.error as string | undefined,
+            return { chunks, claimed: !!c.claimed, renderedTransport: !!c.renderedTransport, done: !!c.done, error: c.error as string | undefined,
               status: c.status as number | undefined, code: c.code as string | undefined, type: c.errorType as string | undefined,
               retryAfter: c.retryAfter as string | null, resetsAt: c.resetsAt as number | undefined };
           });
-          if (!part.claimed && Date.now() > claimDeadline)
-            throw new UpstreamError('Claude did not send a supported completion request; verify the browser.', 502);
+          if (!part.claimed && (part.renderedTransport || Date.now() > claimDeadline)) {
+            // The current frontend uses ConversationService RPC rather than
+            // completion SSE. Read its own rendered reply without resending.
+            const reply = await page!.evaluate(() => {
+              const before = (globalThis as any).__proxyClaude?.beforeReplies;
+              const message = [...document.querySelectorAll('[data-testid="assistant-message"]')].filter(node => !before?.has(node) && (node as HTMLElement).getClientRects().length).at(-1);
+              const text = (message?.querySelector('[data-perf-reply-text]') as HTMLElement | null)?.innerText ?? '';
+              return { found: !!message, complete: message?.getAttribute('data-is-streaming') === 'false', text };
+            });
+            if (!reply.found && !part.renderedTransport) throw new UpstreamError('Claude did not send a supported completion request; verify the browser.', 502);
+            if (reply.complete && reply.text) {
+              const message = page!.locator('[data-testid="assistant-message"]:visible').last();
+              const text = await readCopiedResponse(page!, message.locator('button[aria-label="Copiar"], button[aria-label="Copy"]').first(), reply.text);
+              yield `data: ${JSON.stringify({ type: 'completion', completion: text, stop_reason: 'end_turn' })}\n\n`;
+              return;
+            }
+          }
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = part.error === 'model_mismatch' ? new UpstreamError('Claude did not honor the requested model.', 400) :
               claudeError(part.status ?? 502, part.code, part.type);
             const retryAfter = part.retryAfter ?? (part.resetsAt ? String(Math.ceil(part.resetsAt - Date.now() / 1000)) : null);
             self.rememberError(error, retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

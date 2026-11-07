@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel, focusChatEditor } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
 import { InteractiveBrowser } from '../services/interactive-browser.ts';
 import { getGenerationGuard, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
@@ -108,7 +108,11 @@ export class MetaProvider implements ProviderAdapter {
     const deadline = Date.now() + timeoutMs;
     let result = null;
     while (true) {
-      result = classifyMetaPage(await page.evaluate(inspectMetaPage));
+      try { result = classifyMetaPage(await page.evaluate(inspectMetaPage)); }
+      catch (error) {
+        if (!(error instanceof Error) || !/Execution context was destroyed|Cannot find context/i.test(error.message) || Date.now() >= deadline) throw error;
+        await delay(250); continue;
+      }
       if (result || Date.now() >= deadline) break;
       await delay(250);
     }
@@ -260,7 +264,7 @@ export class MetaProvider implements ProviderAdapter {
         if (await this.validate() === 'rate_limited') throw metaError('limit', this.providerMessage);
         before = await page!.evaluate(metaMessageIds);
         interaction = 'focusing editor';
-        await page!.locator(`${EDITOR}, ${LANDING_INPUT}`).first().click({ timeout: 20_000 });
+        await focusChatEditor(page!, `${EDITOR}, ${LANDING_INPUT}`);
         // Reacquire the active editor after hydration; never fill a detached placeholder.
         const editor = await page!.locator(EDITOR).first().waitFor({ state: 'visible', timeout: 5000 })
           .then(() => page!.locator(EDITOR).first(), () => page!.locator(LANDING_INPUT).first());

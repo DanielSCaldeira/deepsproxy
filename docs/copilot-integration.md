@@ -5,8 +5,21 @@ expostos como `copilot/<modo-original>`. O adaptador segue o padrão do ChatGPT:
 o próprio frontend do site prepara e envia a mensagem; o proxy opera o
 compositor e captura a resposta do canal de chat do site.
 
-**Estado: implementado e testado com frontend simulado. Nenhum envio real com
-conta Microsoft foi feito.** Toda a inspeção foi feita sem credenciais.
+**Atualização dos testes autenticados (2026-11-06):** a conta disponível abre
+`copilot.com/chat`, com editor `#m365-chat-editor-target-element` e seletor
+`#gptModeSwitcher`. O adaptador agora envia pelo editor desse aplicativo e
+observa o socket nativo `substrate.office.com/.../Chathub`, sem reconstruir
+credenciais ou enviar requisições alternativas. Apenas `auto` é suportado nesse
+aplicativo; outra seleção falha explicitamente.
+
+A correlação por prompt e invocationId, snapshots da resposta e conclusão foram
+validados em fixture. **O teste real ainda não enviou a mensagem pelo socket:**
+o texto permaneceu no editor. Portanto, o caminho Microsoft 365 não está
+validado de ponta a ponta; o diagnóstico pede verificar o navegador e nunca
+reenvia a mensagem automaticamente. A verificação humana visível é reportada
+como indisponibilidade com confirmação necessária.
+
+As observações públicas abaixo documentam também o aplicativo de consumidor.
 
 ## O que foi observado de fato (sem login, 2026-11-06, pt-BR/en-US)
 

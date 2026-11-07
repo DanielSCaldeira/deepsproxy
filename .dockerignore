@@ -46,6 +46,7 @@ api_key.txt
 .netrc
 .pypirc
 .auth-state.json
+.auth-state.json.before-repair
 .env
 .env.*
 backups

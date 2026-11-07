@@ -49,12 +49,8 @@ export async function* parseErnieStream(chunks: AsyncIterable<string>, signal?: 
     if (!data || completed || event === 'ping') return [];
     let value: any;
     try { value = JSON.parse(data); } catch { throw new UpstreamError('Malformed Ernie SSE data.', 502); }
-    if (event === 'basedata') {
-      // The proxy only operates authenticated accounts; a guest answer means the session expired.
-      const login = value?.user?.isUserLogin;
-      if (login === false || login === 0) throw ernieError(401);
-      return [];
-    }
+    // Visitor answers are valid: the chat does not require a Baidu login.
+    if (event === 'basedata') return [];
     // The frontend restarts from a checkpoint or a background task; not supported by the proxy.
     if (event === 'reconnect' || event === 'task') throw new UpstreamError(`Ernie switched to an unsupported ${event} flow.`, 502);
     if (event !== 'message') return [];

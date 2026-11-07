@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel, readCopiedResponse, focusChatEditor } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
 import { InteractiveBrowser } from '../services/interactive-browser.ts';
 import { getGenerationGuard, retryAfterMilliseconds, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
@@ -13,14 +13,14 @@ import { grokError, grokModes, parseGrokStream, type GrokMode } from './grok-pro
 const ORIGIN = 'https://grok.com';
 // Observed 2026-11-06 (pt-BR, logged out): a TipTap/ProseMirror editor with
 // role="combobox" inside form[data-composer], wrapped by data-testid="chat-input".
-const EDITOR = 'form[data-composer] [data-testid="chat-input"] [contenteditable="true"]:visible, form[data-composer] [contenteditable="true"][role="combobox"]:visible';
-const SEND = 'form[data-composer] button[data-testid="chat-submit"][type="submit"]:visible';
+const EDITOR = 'form[data-composer] [data-testid="chat-input"] [contenteditable="true"]:visible, form[data-composer] [contenteditable="true"][role="combobox"]:visible, .query-bar-editor[contenteditable="true"][role="combobox"]:visible';
+const SEND = 'form[data-composer] button[data-testid="chat-submit"][type="submit"]:visible, form:has(.query-bar-editor) button[type="submit"]:visible';
 // Label from the public bundle ("stop-stream-button-label"); not observed during a real generation.
 const STOP = 'button[aria-label="Parar a resposta do modelo"], button[aria-label="Stop model response"]';
 const MODEL_BUTTON = '#model-select-trigger';
 // Rendered after an anonymous submission; the request is never sent to the chat API.
 const LOGGED_OUT = '[data-testid="anon-paywall-sign-up-card"], [data-testid="anon-paywall-error-card"]';
-const LOCKED_OPTION = /Requer login|Requires login|Iniciar sessão|Sign in/i;
+const LOCKED_OPTION = /Requer (?:login|SuperGrok)|Requires (?:login|SuperGrok)|Iniciar sessão|Sign in/i;
 const AUTO = /^(Auto|Automático|Automatic)$/i;
 
 /** One account per worker. The website prepares and sends its own requests. */
@@ -193,7 +193,7 @@ export class GrokProvider implements ProviderAdapter {
       const element = node as HTMLElement;
       const text = (element.innerText || element.textContent || '').trim();
       return { label: text.split('\n')[0].trim(), text,
-        disabled: element.getAttribute('aria-disabled') === 'true' || element.hasAttribute('data-disabled') };
+        disabled: element.getAttribute('aria-disabled') === 'true' || element.hasAttribute('data-disabled') || element.hasAttribute('data-upsell') };
     })).then(options => options.map(o => ({ label: o.label, text: o.text, enabled: !o.disabled && !LOCKED_OPTION.test(o.text) })));
   }
   private labelMatches(text: string, label: string): boolean {
@@ -208,7 +208,9 @@ export class GrokProvider implements ProviderAdapter {
   private async selectableModels(): Promise<ProviderModel[]> {
     if (!this.page) return [];
     const button = this.page.locator(MODEL_BUTTON).first();
-    if (!await button.isVisible()) { this.labels = new Map(); return [{ id: 'grok/auto', contextLength: 0 }]; }
+    if (!await button.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true, () => false)) {
+      this.labels = new Map(); return [];
+    }
     await button.click({ timeout: 5000 });
     try {
       const options = (await this.menuOptions()).filter(o => o.enabled && o.label);
@@ -241,7 +243,8 @@ export class GrokProvider implements ProviderAdapter {
   private async currentMode(): Promise<string> {
     const button = this.page!.locator(MODEL_BUTTON).first();
     const aria = await button.getAttribute('aria-label').catch(() => null);
-    return (aria?.replace(/^(Modelo|Model)\s*:\s*/i, '') || await button.innerText().catch(() => '')).trim();
+    const text = (await button.innerText().catch(() => '')).trim().split('\n')[0];
+    return (/^(Modelo|Model)\s*:/i.test(aria || '') ? aria!.replace(/^(Modelo|Model)\s*:\s*/i, '') : text || aria || '').trim();
   }
   private async selectModel(model: string): Promise<void> {
     const page = this.page!;
@@ -313,14 +316,15 @@ export class GrokProvider implements ProviderAdapter {
         interaction = 'opening chat'; await this.navigate();
         interaction = 'waiting for editor';
         const editor = page!.locator(EDITOR).first();
-        await editor.waitFor({ state: 'visible', timeout: 30_000 });
+        await focusChatEditor(page!, EDITOR);
         if (new URL(page!.url()).pathname !== '/') throw new UpstreamError('Grok did not open a new conversation.', 502);
         interaction = 'selecting model';
         if (!this.labels.has(model)) await this.selectableModels();
         await this.selectModel(model); controller.signal.throwIfAborted();
         await pauseBeforeProviderAction('send-message');
         await page!.evaluate(({ prompt, mode }) => {
-          (globalThis as any).__proxyGrok = { prompt, mode, chunks: [], bytes: 0, claimed: false, done: false };
+          (globalThis as any).__proxyGrok = { prompt, mode, chunks: [], bytes: 0, claimed: false, done: false,
+            beforeReplies: new Set(document.querySelectorAll('[data-testid="assistant-message"]')) };
         }, { prompt, mode: model.slice('grok/'.length) });
         interaction = 'filling editor';
         await editor.click({ timeout: 10_000 });
@@ -330,7 +334,10 @@ export class GrokProvider implements ProviderAdapter {
         interaction = 'clicking send';
         // The site navigates to /c/... after submission. Capture owns completion;
         // do not time out an already-dispatched message waiting for navigation.
-        await page!.locator(SEND).first().click({ timeout: 10_000, noWaitAfter: true });
+        const send = page!.locator(SEND).first();
+        if (await send.waitFor({state:'visible',timeout:3000}).then(()=>true,()=>false))
+          await send.click({ timeout: 10_000, noWaitAfter: true });
+        else await page!.locator(EDITOR).first().press('Enter', {timeout:5000,noWaitAfter:true});
         controller.signal.throwIfAborted();
       }));
       setupDone = true;
@@ -344,7 +351,7 @@ export class GrokProvider implements ProviderAdapter {
             const c = (globalThis as any).__proxyGrok;
             if (!c) throw new Error('Grok capture unavailable.');
             const chunks: string[] = c.chunks.splice(0); c.bytes = 0;
-            return { chunks, claimed: !!c.claimed, done: !!c.done, error: c.error as string | undefined,
+            return { chunks, claimed: !!c.claimed, renderedTransport: !!c.renderedTransport, done: !!c.done, error: c.error as string | undefined,
               status: c.status as number | undefined, code: c.code as string | undefined, retryAfter: c.retryAfter as string | null };
           });
           if (!part.claimed) {
@@ -356,14 +363,32 @@ export class GrokProvider implements ProviderAdapter {
             if (quota && quota.remaining <= 0 && quota.waitSeconds > 0 && Date.now() - quota.at < 60_000) {
               const error = grokError(429); self.rememberError(error, String(quota.waitSeconds)); throw error;
             }
-            if (Date.now() > claimDeadline)
-              throw new UpstreamError('Grok did not send a supported conversation request; verify the browser.', 502);
+            if (part.renderedTransport || Date.now() > claimDeadline) {
+              const reply = await page!.evaluate(() => {
+                const before = (globalThis as any).__proxyGrok?.beforeReplies;
+                const message = [...document.querySelectorAll('[data-testid="assistant-message"]')].filter(node => !before?.has(node) && (node as HTMLElement).getClientRects().length).at(-1);
+                const response = message?.closest('[id^="response-"]');
+                const text = (message?.querySelector('.response-content-markdown') as HTMLElement | null)?.innerText ??
+                  (message?.querySelector('.streamdown-chat-md') as HTMLElement | null)?.innerText ?? '';
+                const copy = response?.querySelector('button[aria-label="Copiar resposta"], button[aria-label="Copy response"]');
+                const regenerate = response?.querySelector('button[aria-label="Regenerar"], button[aria-label="Regenerate"]');
+                const complete = !!copy && !!regenerate && !regenerate.hasAttribute('disabled') && regenerate.getAttribute('aria-disabled') !== 'true';
+                return { found: !!message, complete, text };
+              });
+              if (reply.complete && reply.text) {
+                const response = page!.locator('[id^="response-"]:visible').filter({has:page!.locator('[data-testid="assistant-message"]')}).last();
+                const text = await readCopiedResponse(page!, response.locator('button[aria-label="Copiar resposta"], button[aria-label="Copy response"]').first(), reply.text);
+                yield JSON.stringify({ result: { response: { modelResponse: { message: text }, isSoftStop: true } } }) + '\n';
+                return;
+              }
+              if (!reply.found && !part.renderedTransport) throw new UpstreamError('Grok did not send a supported conversation request; verify the browser.', 502);
+            }
           }
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = part.error === 'model_mismatch' ? new UpstreamError('Grok did not honor the requested model.', 400) : grokError(part.status ?? 502, part.code);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

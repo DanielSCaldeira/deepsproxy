@@ -64,7 +64,7 @@ export function serializeOpenAIMessages(messages: Message[]): SerializedPrompt {
 export function appendToolInstructions(systemPrompt: string, body: OpenAIRequest): string {
   const bodyAny = body as any;
   if (body.tool_choice === 'none') {
-    return `${systemPrompt}\n\nDo not call tools in this response.`;
+    return `${systemPrompt}\n\nDo not call tools in this response. Tool results in the history are already completed. Answer the user's request directly; do not repeat the transcript, tool requests, or tool responses. Follow the requested final-answer format exactly.`;
   }
   if (!bodyAny.tools || !Array.isArray(bodyAny.tools) || bodyAny.tools.length === 0) {
     return systemPrompt;

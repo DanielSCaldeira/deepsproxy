@@ -48,6 +48,33 @@ opcionalmente, `META_PROFILE_DIR` (padrão `meta_profile`). Veja o
 
 ## Provedores e código compartilhado
 
+As [correções e evidências da rodada de 2026-11-06](docs/provider-fixes-2026-11-06.md)
+registram o que foi validado, os ajustes de sessão/transporte e as pendências
+de autenticação ou disponibilidade dos sites.
+
+Para testar todas as contas do laboratório local com chamadas reais, execute
+`npx tsx scripts/smoke-all-providers.ts`. O executor consulta o catálogo de cada
+conta e verifica texto, streaming, `tool_choice` e o ciclo de retorno de ferramenta
+no mesmo contrato OpenAI utilizado pelo DeepSeek. Ele usa a sessão local de
+`.cache/proxy-ia-live-session.json` ou as credenciais locais de
+`.cache/proxy-ia-live-admin.json`, cria uma chave temporária e a revoga ao terminar.
+As ferramentas de teste executam somente funções locais com dados controlados.
+
+Os resultados ficam em `.cache/all-providers-live-result.json` e `.md`, distinguindo
+aprovação, falha e bloqueio. Login pendente e falhas repetidas de transporte
+bloqueiam os cenários dependentes sem interromper os outros sites. Os navegadores
+de teste são liberados entre contas, preservando os perfis. Use
+`DSP_TEST_PROVIDERS=chatgpt,qwen` para limitar os sites, `DSP_TEST_RESUME=1` para
+retomar os resultados após uma interrupção e `DSP_API_BASE` para outro endereço local.
+Uma interrupção forçada pode exigir revogar a chave temporária pelo painel.
+Para repetir cenários bloqueados, combine `DSP_TEST_RESUME=1` com
+`DSP_TEST_RETRY_BLOCKED=1`. Os filtros `DSP_TEST_CASES` (por exemplo,
+`text,required`), `DSP_TEST_MODELS` (IDs separados por vírgulas) e
+`DSP_TEST_STREAMS` (`json` ou `stream`) permitem uma rodada
+direcionada. `DSP_TEST_CONTINUE_ON_502=1` permite sondar os demais modelos após
+erros 502 repetidos; bloqueios de autenticação e limites de uso continuam
+interrompendo os cenários dependentes.
+
 Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).
 O status de cada site planejado está no [roadmap de provedores](docs/roadmap-provedores.md).
 

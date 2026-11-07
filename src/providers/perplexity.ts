@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from 'playwright';
+import type { BrowserContext, Locator, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
@@ -20,6 +20,44 @@ const STOP = 'button[aria-label^="Stop response"], button[aria-label^="Parar res
 const MODEL_BUTTON = 'button[aria-haspopup="menu"][aria-label="Model"], button[aria-haspopup="menu"][aria-label="Modelo"]';
 const MENU_ITEMS = '[role="menu"] [role="menuitem"], [role="menu"] [role="menuitemradio"]';
 const AUTO_LABEL = /^(Best|Melhor)$/i;
+// Observed 2026-11-07 (pt-BR): a non-modal role="dialog" fixed at the bottom
+// ("Nós e nossos parceiros usamos cookies…", buttons "Recusar opcionais" and
+// "Entendi") intercepts clicks on the model selector. Accepting closes it.
+const COOKIE_BANNER = '[role="dialog"]:has-text("cookies")';
+const COOKIE_ACCEPT = /^\s*(Entendi|Got it|Aceitar|Aceitar todos|Accept|Accept all)\s*$/i;
+
+/** The selector hydrates after the editor; an instant check advertised only "auto". */
+function modelButtonReady(button: Locator): Promise<boolean> {
+  return button.waitFor({ state: "visible", timeout: 15_000 }).then(() => true, () => false);
+}
+
+// Observed 2026-11-07 (pt-BR, free plan): choosing a paid model opens a
+// full-screen subscription offer ("/mês ou equivalente, na cobrança anual").
+const UPSELL_TEXT = /na cobrança anual|billed annually/i;
+
+/** Close the subscription offer without choosing a plan. */
+export async function dismissPerplexityUpsell(page: Page): Promise<void> {
+  const offer = page.getByText(UPSELL_TEXT).first();
+  for (let attempt = 0; attempt < 3 && await offer.isVisible().catch(() => false); attempt++) {
+    const close = page.locator('button[aria-label="Fechar"]:visible, button[aria-label="Close"]:visible').first();
+    if (await close.isVisible().catch(() => false)) await close.click({ timeout: 3000 }).catch(() => {});
+    else await page.keyboard.press('Escape');
+    await offer.waitFor({ state: 'hidden', timeout: 2000 }).catch(() => {});
+  }
+  if (await offer.isVisible().catch(() => false)) throw new UpstreamError('Perplexity subscription offer could not be closed; verify the browser.', 502);
+}
+
+/** Accept the cookie banner whenever it covers an element the adapter clicks. */
+export async function installPerplexityCookieConsent(page: Page): Promise<void> {
+  const banner = page.locator(COOKIE_BANNER).filter({ visible: true }).first();
+  await page.addLocatorHandler(banner, async dialog => {
+    const accept = dialog.locator('button, [role="button"], a').filter({ hasText: COOKIE_ACCEPT }).first();
+    await accept.click({ timeout: 5000 });
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+  }, { noWaitAfter: true });
+  // A leftover subscription offer must not block every later click.
+  await page.addLocatorHandler(page.getByText(UPSELL_TEXT).first(), async () => { await dismissPerplexityUpsell(page); }, { noWaitAfter: true });
+}
 
 /** One account per worker. The website prepares and sends its own requests. */
 export class PerplexityProvider implements ProviderAdapter {
@@ -41,6 +79,8 @@ export class PerplexityProvider implements ProviderAdapter {
   private state: ProviderStatus['state'] = 'not_initialized';
   private catalog: PerplexityCatalogModel[] = [];
   private availableModels: ProviderModel[] = [];
+  /** Menu labels that opened the subscription offer on this account. */
+  private readonly paidOnly = new Set<string>();
   private active = new Set<AbortController>();
 
   initialize(headless = true): Promise<void> {
@@ -75,7 +115,8 @@ export class PerplexityProvider implements ProviderAdapter {
         for (const controller of this.active) controller.abort();
         const unlock = this.unlock; this.unlock = undefined; void unlock?.();
       });
-      this.page = await createBrowserPage(context);
+      this.page = await createBrowserPage(context, { rejectCookies: false });
+      await installPerplexityCookieConsent(this.page);
       await this.navigate();
     } catch (error) { await this.closeAutomation(); throw error; }
   }
@@ -177,10 +218,10 @@ export class PerplexityProvider implements ProviderAdapter {
     if (!this.page) return [];
     const automatic = { id: 'perplexity/auto', contextLength: 0 };
     const button = this.page.locator(MODEL_BUTTON).first();
-    if (!await button.isVisible()) return [automatic];
+    if (!await modelButtonReady(button)) return [automatic];
     await button.click({ timeout: 5000 });
     try {
-      const labels = (await this.menuLabels()).filter(item => !item.disabled).map(item => item.label);
+      const labels = (await this.menuLabels()).filter(item => !item.disabled && !this.paidOnly.has(item.label)).map(item => item.label);
       return [automatic, ...this.catalog.filter(m => labels.includes(m.label)).map(({ id, contextLength }) => ({ id, contextLength }))];
     } finally { await this.page.keyboard.press('Escape'); }
   }
@@ -198,7 +239,7 @@ export class PerplexityProvider implements ProviderAdapter {
   private async selectModel(model: string): Promise<void> {
     const page = this.page!;
     const button = page.locator(MODEL_BUTTON).first();
-    if (!await button.isVisible()) {
+    if (!await modelButtonReady(button)) {
       if (model !== 'perplexity/auto') throw new UpstreamError('Perplexity model selection unavailable.', 400);
       return;
     }
@@ -215,6 +256,13 @@ export class PerplexityProvider implements ProviderAdapter {
     }
     await page.locator(MENU_ITEMS).nth(index).click({ timeout: 5000 });
     if (await page.locator('[role="menu"]').first().isVisible().catch(() => false)) await page.keyboard.press('Escape');
+    // A paid model on this plan opens the subscription offer instead of switching.
+    if (label && await page.getByText(UPSELL_TEXT).first().waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false)) {
+      await dismissPerplexityUpsell(page);
+      this.paidOnly.add(label);
+      this.availableModels = this.availableModels.filter(m => m.id !== model);
+      throw new UpstreamError('This Perplexity model requires a paid plan on this account.', 400);
+    }
   }
   private rememberError(error: unknown, retryAfter?: string | null): void {
     if (!(error instanceof UpstreamError)) return;
@@ -290,12 +338,19 @@ export class PerplexityProvider implements ProviderAdapter {
           });
           if (!part.claimed && Date.now() > claimDeadline)
             throw new UpstreamError('Perplexity did not send a supported ask request; verify the browser.', 502);
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
-            const error = part.error === 'model_mismatch' ? new UpstreamError('Perplexity did not honor the requested model.', 400) :
+            if (part.error === 'model_mismatch') {
+              // Observed 2026-11-07 (free plan): the site keeps its default model for
+              // paid choices. Stop advertising a model this account cannot use.
+              const label = self.catalog.find(m => m.id === model)?.label;
+              if (label) self.paidOnly.add(label);
+              self.availableModels = self.availableModels.filter(m => m.id !== model);
+            }
+            const error = part.error === 'model_mismatch' ? new UpstreamError('Perplexity did not honor the requested model; it may require a paid plan on this account.', 400) :
               perplexityError(part.status ?? 502, part.code, part.challenge);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

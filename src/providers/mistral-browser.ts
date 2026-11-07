@@ -99,7 +99,7 @@ export function inspectMistralPage(): { challenge: boolean; anonymous: boolean; 
   const anonymous = /"session":null/.test(payload);
   const signIn = [...document.querySelectorAll('button, a')].some(element => visible.has(element) &&
     /^(Sign in|Sign up|Log in|Entrar|Inscrever-se|Cadastre-se|Criar conta)$/i.test((element.textContent ?? '').trim()));
-  const composer = [...document.querySelectorAll('[data-composer-editor] [contenteditable="true"], form [contenteditable="true"].ProseMirror')].some(element => visible.has(element));
+  const composer = [...document.querySelectorAll('[data-composer-editor] [contenteditable="true"], form [contenteditable="true"].ProseMirror, .rich-text-editor.ProseMirror[contenteditable="true"]')].some(element => visible.has(element));
   const terms = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some(dialog => visible.has(dialog) &&
     /Terms of Service|Termos de (Serviço|Uso)/i.test(dialog.textContent ?? '') &&
     [...dialog.querySelectorAll('button')].some(button => /^(Accept and continue|Aceitar e continuar)$/i.test((button.textContent ?? '').trim())));

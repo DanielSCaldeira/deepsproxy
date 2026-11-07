@@ -80,7 +80,7 @@ real**; o decodificador foi testado só com eventos simulados nesse formato.
   `auto` o adaptador clica em “Best/Melhor” quando o item existe. Para modelo
   específico, a captura exige `params.model_preference` igual ao pedido; caso
   contrário falha com 400 (sem trocar de modelo silenciosamente).
-- **Citações:** marcadores inline (`[1]`) ficam como o site escreveu; ao final é
+- **Citações:** marcadores inline (`[1]`) ficam como o site escreveu; quando presentes, ao final é
   acrescentada uma lista `Fontes:` numerada (`[n] título - URL`, só http/https,
   sem duplicatas, até 20). A lista é omitida quando a resposta contém
   `<tool_call>` (protocolo de IDE) ou com `PERPLEXITY_SOURCES=none`.
@@ -151,3 +151,15 @@ commit base `bb3ecff` sem as alterações desta integração, nesta máquina.
    em português.
 6. Desafio Cloudflare no worker (o humano resolve na tela remota) e
    `squid -k parse` com a nova ACL.
+# Atualização dos testes autenticados — 2026-11-06
+
+O envio real continua em `/rest/sse/perplexity_ask`, mas a resposta também pode
+vir em `workflow_root.workflow_block.steps[].items[]`, com patches incrementais.
+O decodificador lê apenas `WORKFLOW_ITEM_TEXT` marcado como `answer`; consultas
+de busca, raciocínio e resultados de ferramentas não entram no texto final.
+Foram observados texto final e fontes em chamada real após a correção.
+
+O rodapé de fontes só é acrescentado quando a resposta contém citações inline.
+Isso preserva respostas com formato exato. O tratamento de cookies usa a opção
+visível de recusar cookies opcionais. Há regressões para esses comportamentos e
+para o cancelamento do leitor depois de um frame final válido.

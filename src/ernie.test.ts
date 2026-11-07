@@ -75,8 +75,8 @@ test('Ernie decoding fails explicitly on expiry, risk hints, unsupported flows a
     basedata() + markdown('unfinished'), basedata() + endTurn, basedata() + frame('message', { status: 1004 })]) {
     await assert.rejects(() => collect(parseErnieStream(chunks(input))), UpstreamError);
   }
-  await assert.rejects(() => collect(parseErnieStream(chunks(answer('x').replace(basedata(), basedata(false))))), (e: any) => e.status === 401);
-  await assert.rejects(() => collect(parseErnieStream(chunks(answer('x').replace(basedata(), basedata(0))))), (e: any) => e.status === 401);
+  // Visitor answers (isUserLogin false/0) are normal answers; the chat does not require login.
+  for (const flag of [false, 0]) assert.equal((await collect(parseErnieStream(chunks(answer('x').replace(basedata(), basedata(flag)))))).filter((v: any) => v.type === 'content').map((v: any) => v.text).join(''), 'x');
   const controller = new AbortController(); controller.abort();
   await assert.rejects(() => collect(parseErnieStream(chunks(answer('x')), controller.signal)));
 });
@@ -239,15 +239,16 @@ test('Ernie frontend fixture: login, model menu, generation, tools, cancellation
     abort.abort();
     for (let i = 0; i < 50 && guard.status().busy; i++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(guard.status().busy, false);
-    // A guest answer during generation means the Baidu session expired.
+    // The chat works as a visitor: a guest answer is a normal answer, not an expired login.
     state.reply = () => answer('convidado').replace(basedata(), basedata(false));
-    await assert.rejects(async () => collect(await provider.generate('Sessão expirada', 'ernie/smartMode', false)), (e: any) => e.status === 401);
-    assert.equal((await provider.status()).state, 'login_required');
+    assert.equal((await collect(await provider.generate('Como visitante', 'ernie/smartMode', false))).filter(v => v.type === 'content').map(v => v.text).join(''), 'convidado');
     assert.equal(guard.status().busy, false);
-    Object.assign(guard, { saved: { nextAllowedAt: 0, block: null } });
+    // A stale login_required block is cleared once the visitor chat is reachable.
+    guard.block({ state: 'login_required' });
     state.login = 0;
-    await assert.rejects(() => provider.confirmLogin(), (e: any) => e.status === 401);
-    assert.equal((await provider.status()).authenticated, false);
+    await provider.confirmLogin();
+    const visitor = await provider.status();
+    assert.equal(visitor.authenticated, false); assert.equal(visitor.state, 'authenticated');
     const error = apiError(new UpstreamError('Ernie login is required.', 401), 'ernie_login_required').error;
     assert.equal(error.help_url, 'https://wenxin.baidu.com/'); assert.match(error.user_action, /Concluir login/);
     assert.match(error.user_action, /conta Baidu/); assert.doesNotMatch(error.user_action, /DeepSeek|bloqueado em navegadores/);
@@ -264,14 +265,15 @@ test('Ernie early manual confirmation reopens login and successful confirmation 
   const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
   const browser = await chromium.launch();
   const provider = new ErnieProvider();
-  let login = 0, reopened = 0, humanRunning = true;
+  // -1: the chat page is not reachable yet (no session data rendered).
+  let login = -1, reopened = 0, humanRunning = true;
   try {
     const fake = { get running() { return humanRunning; }, close: async () => { humanRunning = false; },
       start: async () => { reopened++; humanRunning = true; } };
     const launch = async () => {
       const context = await browser.newContext();
       const page = await context.newPage();
-      await page.route('https://wenxin.baidu.com/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: composer(login) }));
+      await page.route('https://wenxin.baidu.com/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: login < 0 ? '<html></html>' : composer(login) }));
       await page.goto('https://wenxin.baidu.com/');
       Object.assign(provider, { context, page });
     };
@@ -280,10 +282,11 @@ test('Ernie early manual confirmation reopens login and successful confirmation 
     await assert.rejects(() => provider.confirmLogin(), /Concluir login/);
     await assert.rejects(() => provider.finishLogin(), /Conclua o acesso/);
     assert.equal(reopened, 1); assert.equal((await provider.status()).confirmationRequired, true);
-    login = 1;
+    // A reachable visitor chat is enough: the Baidu login is optional.
+    login = 0;
     await provider.finishLogin();
     const status = await provider.status();
-    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true); assert.equal(status.authenticated, true);
+    assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true); assert.equal(status.authenticated, false);
     assert.equal(humanRunning, false);
     const page = provider.getActivePage(); await provider.initialize(false); assert.equal(provider.getActivePage(), page);
   } finally {

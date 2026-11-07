@@ -160,6 +160,39 @@ const frontend = `<form data-composer="true"><div data-testid="chat-input"><div 
       await response.text()};
   </script>`;
 
+test('Grok native server action excludes paid modes and waits for the new completed answer', async () => {
+  const browser = await launch(), provider = new GrokProvider();
+  try {
+    const context = await browser.newContext(); await context.addInitScript(installGrokCapture);
+    const page = await context.newPage();
+    const guard = new GenerationGuard(undefined, Date.now, () => 0, async () => {});
+    Object.assign(provider, {context, page, guard});
+    let submissions = 0;
+    const native = frontend.replace('data-composer="true"', '').replace('class="tiptap ProseMirror"', 'class="tiptap ProseMirror query-bar-editor"')
+      .replace('Escolhe o modo', 'Requer SuperGrok').replace('Pensa mais', 'Requires SuperGrok')
+      .replace('<script>', `<div id="response-old"><div data-testid="assistant-message"><div class="response-content-markdown">OLD</div></div><button aria-label="Copy response"></button><button aria-label="Regenerate"></button></div><script>`)
+      .replace("const message=document.querySelector('[contenteditable]').innerText;", `
+        await fetch('/',{method:'POST',body:'native-action'});
+        const reply=document.createElement('div');reply.id='response-new';
+        reply.innerHTML='<div data-testid="assistant-message"><div class="response-content-markdown">partial</div></div><button aria-label="Copy response"></button>';
+        document.body.append(reply);reply.querySelector('button').onclick=()=>navigator.clipboard.writeText('NATIVE_OK');
+        setTimeout(()=>{reply.querySelector('.response-content-markdown').textContent='NATIVE_OK';const done=document.createElement('button');done.setAttribute('aria-label','Regenerate');reply.append(done);},100);
+        return;
+        const message=document.querySelector('[contenteditable]').innerText;`);
+    await page.route('https://grok.com/**', route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === '/api/auth/session') return route.fulfill({json:{status:'authenticated',session:{user:{id:'fixture'}}}});
+      if (route.request().method() === 'POST' && pathname === '/') { submissions++; return route.fulfill({body:'action'}); }
+      if (pathname === '/rest/modes') return route.fulfill({json:{modes:[]}});
+      return route.fulfill({contentType:'text/html',body:native});
+    });
+    await page.goto('https://grok.com/');
+    assert.deepEqual(await provider.models(), [{id:'grok/fast',contextLength:0}]);
+    assert.equal(contentOf(await collect(await provider.generate('Teste nativo', 'grok/fast', false))), 'NATIVE_OK');
+    assert.equal(submissions, 1); assert.equal(guard.status().busy, false);
+  } finally { await provider.close(); }
+});
+
 test('Grok frontend fixture: login, modes, generation, model selection, quota, paywall, expiry and guard release', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'grok-fixture-'));
   const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
@@ -190,7 +223,7 @@ test('Grok frontend fixture: login, modes, generation, model selection, quota, p
     await page.goto('https://grok.com/');
     await provider.confirmLogin(true);
     assert.equal((await provider.status()).authenticated, true);
-    assert.deepEqual(await provider.models(), ['grok/auto', 'grok/fast', 'grok/expert', 'grok/heavy'].map(id => ({ id, contextLength: 0 })));
+    assert.deepEqual(await provider.models(), ['grok/auto', 'grok/fast', 'grok/expert'].map(id => ({ id, contextLength: 0 })));
     assert.equal(await page.locator('#menu').isHidden(), true, 'the menu is closed after listing');
     const result = await collect(await provider.generate('Teste', 'grok/auto', false));
     assert.equal(contentOf(result), 'Olá do fixture'); assert.equal(guard.status().busy, false);

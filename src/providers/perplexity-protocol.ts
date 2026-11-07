@@ -121,8 +121,17 @@ const markdownText = (block: any): string => {
 export function perplexityAnswer(blocks: Map<string, Block>, usages?: unknown): string {
   const selected = Array.isArray(usages) && usages.length
     ? usages.filter((u): u is string => typeof u === 'string').map(u => blocks.get(u))
-    : [...blocks.values()].filter(b => b.intended_usage === 'ask_text' || b.intended_usage.startsWith('ask_text_'));
-  return selected.map(b => markdownText(b?.markdown_block)).filter(text => text.length).join('\n\n');
+    : [...blocks.values()].filter(b => b.intended_usage === 'ask_text' || b.intended_usage.startsWith('ask_text_') || b.intended_usage === 'workflow_root');
+  return selected.flatMap(b => {
+    if (b?.markdown_block) return [markdownText(b.markdown_block)];
+    if (!Array.isArray(b?.workflow_block?.steps)) return [];
+    // Search queries, tool results and reasoning share the workflow block.
+    // Only the items marked as the answer belong in the response.
+    return b.workflow_block.steps.flatMap((step: any) => Array.isArray(step?.items) ? step.items : [])
+      .filter((item: any) => item?.type === 'WORKFLOW_ITEM_TEXT' &&
+        (item.variant === 'answer' || item.payload?.text_payload?.variant === 'answer'))
+      .map((item: any) => markdownText({chunks:item.payload?.text_payload?.chunks,answer:item.payload?.text_payload?.text}));
+  }).filter(text => text.length).join('\n\n');
 }
 
 export function perplexitySources(blocks: Map<string, Block>): PerplexitySource[] {
@@ -141,11 +150,11 @@ export function perplexitySources(blocks: Map<string, Block>): PerplexitySource[
 
 /**
  * Citation representation: inline markers such as [1] stay as written by the site;
- * a numbered "Fontes:" list is appended once at completion. It is omitted when the
+ * a numbered "Fontes:" list is appended once at completion when the answer cites them. It is omitted when the
  * answer contains a tool call (IDE protocol) or PERPLEXITY_SOURCES=none.
  */
 export function formatPerplexitySources(sources: PerplexitySource[], answer: string): string {
-  if (!sources.length || /<tool_call>/.test(answer) || process.env.PERPLEXITY_SOURCES === 'none') return '';
+  if (!sources.length || !/\[\d+(?:[\s,–-]+\d+)*\]/.test(answer) || /<tool_call>/.test(answer) || process.env.PERPLEXITY_SOURCES === 'none') return '';
   return '\n\nFontes:\n' + sources.map((s, i) => `[${i + 1}] ${s.title ? `${s.title} - ` : ''}${s.url}`).join('\n');
 }
 
@@ -166,7 +175,7 @@ export async function* parsePerplexityStream(chunks: AsyncIterable<string>, sign
       diverged = false;
       if (current.length > emitted.length) { events.push({ type: 'content', text: current.slice(emitted.length) }); emitted = current; }
     } else diverged = true;
-    if (value.final === true || value.status === 'COMPLETED') events.push(...finish());
+    if (value.final === true || value.final_sse_message === true || value.status === 'COMPLETED') events.push(...finish());
     return events;
   };
   const finish = (): ProviderEvent[] => {

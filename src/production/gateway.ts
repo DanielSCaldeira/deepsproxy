@@ -25,6 +25,7 @@ export function createGateway(db: Database, workers: Workers, config: Production
   }
   const tickets = new Map<string, { user: string; account: string; session: string; until: number }>();
   const active = new Map<string, Set<AbortController>>();
+  const keyActive = new Map<string, Set<AbortController>>();
   const accountActive = new Map<string, Set<AbortController>>();
   let draining = false;
   const cancelAccountRequests = (id: string) => { for (const controller of accountActive.get(id) || []) controller.abort(); };
@@ -142,7 +143,8 @@ export function createGateway(db: Database, workers: Workers, config: Production
     const who = c.get('identity');
     const result = await db.query('UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND user_id=$2 RETURNING id', [uuid(c.req.param('id')), who.id]);
     if (!result.rows.length) throw new HttpError(404, 'Chave não encontrada.');
-    cancelRequests(who.id); await audit(db, who.id, 'key_revoked', result.rows[0].id); return c.json({ ok: true });
+    for (const controller of keyActive.get(result.rows[0].id) || []) controller.abort();
+    await audit(db, who.id, 'key_revoked', result.rows[0].id); return c.json({ ok: true });
   });
   app.on('POST', ['/api/me/connection/:action','/api/me/accounts/:provider/connection/:action'], async c => {
     const action = c.req.param('action') || '', who = c.get('identity'), account = await accountFor(c);
@@ -247,13 +249,15 @@ export function createGateway(db: Database, workers: Workers, config: Production
     if (workers.isLoggingIn(account.id)) throw new HttpError(409, 'Conclua o login pelo painel.', account.provider + '_login_in_progress');
     const controller = new AbortController(), requestSet = active.get(user.id) || new Set<AbortController>();
     requestSet.add(controller); active.set(user.id,requestSet);
+    const keySet = keyActive.get(user.key_id) || new Set<AbortController>();
+    keySet.add(controller); keyActive.set(user.key_id,keySet);
     const accountSet = accountActive.get(account.id) || new Set<AbortController>();
     accountSet.add(controller); accountActive.set(account.id,accountSet);
     const abort = () => controller.abort(); c.req.raw.signal.addEventListener('abort',abort,{once:true});
     if (c.req.raw.signal.aborted) abort();
     let release: (() => void) | undefined;
     let cleaned = false;
-    const cleanup = () => { if (cleaned) return; cleaned = true; release?.(); requestSet.delete(controller); if (!requestSet.size) active.delete(user.id); accountSet.delete(controller); if (!accountSet.size) accountActive.delete(account.id); c.req.raw.signal.removeEventListener('abort',abort); };
+    const cleanup = () => { if (cleaned) return; cleaned = true; release?.(); requestSet.delete(controller); if (!requestSet.size) active.delete(user.id); keySet.delete(controller); if (!keySet.size) keyActive.delete(user.key_id); accountSet.delete(controller); if (!accountSet.size) accountActive.delete(account.id); c.req.raw.signal.removeEventListener('abort',abort); };
     try {
       release = await workers.queue(account.id).acquire(controller.signal);
       await apiIdentity(c); // A queued request may have been revoked while waiting.

@@ -108,6 +108,8 @@ export class KimiProvider implements ProviderAdapter {
    * UserService/GetCurrentUser. Guests can chat on Kimi, so an editor proves nothing.
    * Tokens never leave Chromium; only a status and a boolean return to Node. */
   private async currentUser(): Promise<{ status: number; authenticated: boolean; refresh: boolean; reason?: string }> {
+    await this.page!.waitForFunction(() => !!localStorage.getItem('access_token') && !!localStorage.getItem('refresh_token'),
+      undefined, { timeout: 10_000 }).catch(() => {});
     return this.page!.evaluate(async ({ path, headers }) => {
       const access = localStorage.getItem('access_token'), refresh = localStorage.getItem('refresh_token');
       if (!access || !refresh) return { status: 401, authenticated: false, refresh: !!refresh };
@@ -230,11 +232,14 @@ export class KimiProvider implements ProviderAdapter {
   private async selectModel(entry: KimiCatalogModel): Promise<void> {
     const page = this.page!;
     const button = page.locator(MODEL_BUTTON).first();
-    if (!await button.isVisible()) throw new UpstreamError('Kimi model selection unavailable.', 400);
+    if (!await button.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false))
+      throw new UpstreamError('Kimi model selection unavailable.', 400);
     const current = (await button.locator('.model-name').first().innerText().catch(() => '')).trim();
     if (current === entry.label || current.startsWith(entry.label + ' ')) return;
     await button.click({ timeout: 5000 });
-    const option = () => page.locator(MODEL_OPTION).filter({ has: page.locator('.model-name', { hasText: new RegExp(`^\\s*${entry.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) }) }).first();
+    const byId = page.locator(`${MODEL_OPTION}[data-moon-key="${entry.id.slice('kimi/'.length)}"]`);
+    const byLabel = page.locator(MODEL_OPTION).filter({ has: page.locator('.model-name', { hasText: new RegExp(`^\\s*${entry.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) }) });
+    const option = () => byId.or(byLabel).first();
     if (!await option().isVisible().catch(() => false)) {
       const more = page.locator(MORE_MODELS).first();
       if (await more.isVisible().catch(() => false)) { await more.hover({ timeout: 3000 }).catch(() => {}); await delay(300); }

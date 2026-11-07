@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
+import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel, focusChatEditor, browserNeedsVerification } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
 import { InteractiveBrowser } from '../services/interactive-browser.ts';
 import { getGenerationGuard, retryAfterMilliseconds, UpstreamError, withGenerationSignal } from '../services/generation-guard.ts';
@@ -79,6 +79,15 @@ export class ChatGPTProvider implements ProviderAdapter {
   private async navigate(): Promise<void> {
     if (!this.page) throw new UpstreamError('ChatGPT browser unavailable.', 503);
     await pauseBeforeProviderAction('open-chat');
+    if (this.page.url() === ORIGIN + '/' && await this.page.locator(EDITOR).first().isVisible().catch(() => false)) return;
+    if (new URL(this.page.url()).origin === ORIGIN) {
+      const home = this.page.locator('a[href="/"]:visible').first();
+      if (await home.isVisible().catch(() => false)) {
+        await home.click({ timeout: 5000 });
+        await this.page.waitForURL(url => url.origin === ORIGIN && url.pathname === '/', { timeout: 10_000 });
+        return;
+      }
+    }
     await this.page.goto(ORIGIN + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   }
   getActivePage() { return this.page; }
@@ -150,9 +159,11 @@ export class ChatGPTProvider implements ProviderAdapter {
       try { await this.validate(); }
       catch (error) { this.state = error instanceof UpstreamError && error.status === 401 ? 'login_required' : 'unavailable'; }
     }
-    return { ...this.guard.status(), state: this.guard.status().block?.state ?? this.state, authenticated: this.authenticated,
+    const verification = !!this.page && await browserNeedsVerification(this.page);
+    return { ...this.guard.status(), state: this.guard.status().block?.state ?? (verification ? 'unavailable' : this.state), authenticated: this.authenticated,
+      ...(verification ? { confirmationRequired: true, originalMessage: 'Conclua a verificação do site na tela remota do painel.' } : {}),
       sessionSaved: await this.session.hasSavedSession(), checkedAt: this.checkedAt,
-      originalMessage: this.state === 'rate_limited' ? 'Limite de uso do ChatGPT atingido.' : null };
+      ...(!verification ? { originalMessage: this.state === 'rate_limited' ? 'Limite de uso do ChatGPT atingido.' : null } : {}) };
   }
   private async selectableModels(): Promise<ProviderModel[]> {
     if (!this.page) return [];
@@ -240,7 +251,7 @@ export class ChatGPTProvider implements ProviderAdapter {
         // Focus the server-rendered input as a person would, then reacquire the
         // editor after hydration replaces it. Never fill a detached placeholder.
         interaction = 'focusing editor';
-        await page!.locator(EDITOR + ', #pending-home-input:visible').first().click({ timeout: 20_000 });
+        await focusChatEditor(page!, EDITOR + ', #pending-home-input:visible');
         const editor = page!.locator(EDITOR).first();
         interaction = 'waiting for editor';
         await editor.waitFor({ state: 'visible', timeout: 30_000 });
@@ -274,11 +285,11 @@ export class ChatGPTProvider implements ProviderAdapter {
           });
           if (!part.claimed && Date.now() > claimDeadline)
             throw new UpstreamError('ChatGPT did not send a supported conversation request; verify the browser.', 502);
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = part.error === 'model_mismatch' ? new UpstreamError('ChatGPT did not honor the requested model.', 400) : chatGPTError(part.status ?? 502, part.code);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

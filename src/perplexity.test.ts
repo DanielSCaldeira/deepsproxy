@@ -41,6 +41,22 @@ async function* chunks(text: string, size = 1) { for (let i = 0; i < text.length
 const collect = async (source: AsyncIterable<any>) => { const values = []; for await (const value of source) values.push(value); return values; };
 const text = (values: any[]) => values.filter(v => v.type === 'content').map(v => v.text).join('');
 
+test('Perplexity workflow answers apply streamed patches without leaking search or reasoning steps', async () => {
+  const start = {structured_answer_block_usages:['workflow_root'],blocks:[{intended_usage:'workflow_root',workflow_block:{steps:[
+    {items:[{type:'WORKFLOW_ITEM_QUERIES',payload:{queries_payload:{queries:['PRIVATE_QUERY']}}},
+      {type:'WORKFLOW_ITEM_TEXT',variant:'reasoning',payload:{text_payload:{text:'PRIVATE_THINKING'}}}]},
+    {items:[{type:'WORKFLOW_ITEM_TEXT',variant:'answer',payload:{text_payload:{variant:'answer',chunks:['FINAL'],text:''}}}]}
+  ]}}]};
+  const update = {final_sse_message:true,blocks:[{intended_usage:'workflow_root',diff_block:{field:'workflow_block',patches:[
+    {op:'add',path:'/steps/1/items/0/payload/text_payload/chunks/1',value:'_OK'},
+    {op:'replace',path:'/steps/1/items/0/payload/text_payload/text',value:'FINAL_OK'}
+  ]}}]};
+  const result = await collect(parsePerplexityStream(chunks(message(start)+message(update),3)));
+  assert.equal(text(result),'FINAL_OK'); assert.equal(result.at(-1).type,'finish');
+  const exact = await collect(parsePerplexityStream(chunks(message({...markdown(['EXACT_OK']),final:true,blocks:[...markdown(['EXACT_OK']).blocks,sources]}),5)));
+  assert.equal(text(exact),'EXACT_OK','uncited sources must not alter an exact response');
+});
+
 test('Perplexity catalog, routing, profile and errors do not invent models or diagnoses', () => {
   assert.equal(providerId('perplexity'), 'perplexity');
   assert.equal(providerIdForModel('perplexity/claude55sonnet'), 'perplexity');
@@ -188,6 +204,9 @@ const COMPOSER = `<div contenteditable="true" role="textbox" aria-label="Ask any
           body: JSON.stringify({ params: { model_preference: model, mode: 'copilot', use_schematized_api: true }, query_str: editor.innerText }) });
         history.pushState(null, '', '/search/fixture-slug');
         await response.text();
+        // A completed frame must survive the frontend canceling its reader afterward.
+        const capture=window.__proxyPerplexity;
+        if(capture){capture.error='stream_failed';capture.done=true;}
       };
       document.body.append(send);
     };
@@ -335,4 +354,51 @@ test('Perplexity early manual confirmation reopens login and successful confirma
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('Perplexity accepts the non-modal cookie banner that covers the model selector', async () => {
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext();
+    const { createBrowserPage } = await import('./services/browser.ts');
+    const { installPerplexityCookieConsent } = await import('./providers/perplexity.ts');
+    const page = await createBrowserPage(context, { rejectCookies: false });
+    await installPerplexityCookieConsent(page);
+    // Mirrors the real banner: "Recusar opcionais" keeps it open; "Entendi" closes it.
+    await page.route('https://www.perplexity.ai/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
+      <button type="button" aria-label="Modelo" aria-haspopup="menu" style="position:fixed;bottom:20px;left:20px" onclick="window.opened=true">Melhor</button>
+      <div role="dialog" aria-modal="false" style="position:fixed;bottom:0;left:0;right:0;height:120px;background:white;z-index:2000">
+        <div>Nós e nossos parceiros usamos cookies, pixels, SDKs, APIs e integrações.</div>
+        <button type="button">Recusar opcionais</button>
+        <button type="button" onclick="setTimeout(()=>this.closest('[role=dialog]').remove(),30)"><span>Entendi</span></button>
+      </div>` }));
+    await page.goto('https://www.perplexity.ai/');
+    await page.locator('button[aria-haspopup="menu"][aria-label="Modelo"]').click({ timeout: 5000 });
+    assert.equal(await page.evaluate(() => (window as any).opened), true);
+    assert.equal(await page.locator('[role="dialog"]').count(), 0);
+  } finally { await browser.close(); }
+});
+
+test('Perplexity closes the subscription offer that a paid model opens on a free plan', async () => {
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext();
+    const { createBrowserPage } = await import('./services/browser.ts');
+    const { installPerplexityCookieConsent, dismissPerplexityUpsell } = await import('./providers/perplexity.ts');
+    const page = await createBrowserPage(context, { rejectCookies: false });
+    await installPerplexityCookieConsent(page);
+    // Mirrors the real offer: a full-screen layer whose content intercepts clicks.
+    const offer = `<div id="offer" class="fixed" style="position:fixed;inset:0;z-index:3000;background:white">
+      <div>R$ 100</div><div>/mês ou equivalente, na cobrança anual</div>
+      <button type="button" aria-label="Fechar" onclick="document.getElementById('offer').remove()">×</button></div>`;
+    await page.route('https://www.perplexity.ai/**', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `
+      <button type="button" aria-label="Modelo" aria-haspopup="menu" onclick="window.opened=true">Melhor</button>${offer}` }));
+    await page.goto('https://www.perplexity.ai/');
+    await page.locator('button[aria-label="Modelo"]').click({ timeout: 5000 });
+    assert.equal(await page.evaluate(() => (window as any).opened), true);
+    assert.equal(await page.locator('#offer').count(), 0);
+    await page.evaluate(html => document.body.insertAdjacentHTML('beforeend', html), offer);
+    await dismissPerplexityUpsell(page);
+    assert.equal(await page.locator('#offer').count(), 0);
+  } finally { await browser.close(); }
 });

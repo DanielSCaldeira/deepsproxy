@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from 'playwright';
+import type { BrowserContext, Locator, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
@@ -37,7 +37,52 @@ export const COPILOT_SELECTORS = {
 const modeButton = (mode: string) => `[data-testid="composer-chat-mode-${mode}-button"]`;
 const MODE_TRIGGER = `button:is(${COPILOT_MODES.map(modeButton).join(',')}):not([role="menuitem"])`;
 
-export type CopilotPageProbe = { origin: string; anonymous: boolean; composer: boolean; userStatus: number | null; tier: string | null; m365?: boolean };
+/** Zero-width markers that rich-text editors keep around their text nodes. */
+const INVISIBLE = new RegExp('[' + String.fromCharCode(0x200b) + '-' + String.fromCharCode(0x200d, 0x2060, 0xfeff) + ']', 'g');
+const visibleLength = (text: string) => text.replace(INVISIBLE, '').replace(/\s+/g, '').length;
+
+/** Observed 2026-11-07: Playwright's fill changed the Microsoft 365 composer's DOM
+ * but not its editor state, so Send dispatched nothing and the prompt stayed in
+ * the box. A paste event goes through the editor's own input handling. */
+export async function fillM365Editor(page: Page, editor: Locator, prompt: string): Promise<void> {
+  await editor.press('ControlOrMeta+a', { timeout: 5000 });
+  await editor.press('Delete', { timeout: 5000 });
+  await editor.evaluate((element, text) => {
+    const data = new DataTransfer(); data.setData('text/plain', text);
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, prompt);
+  if (visibleLength(await editor.innerText()) >= visibleLength(prompt)) return;
+  // Editors without a paste handler accept native text input instead.
+  await editor.press('ControlOrMeta+a', { timeout: 5000 });
+  await editor.press('Delete', { timeout: 5000 });
+  await page.keyboard.insertText(prompt);
+}
+
+/** The composer empties once the message is dispatched. */
+export async function m365Submitted(page: Page, editor: Locator, timeout = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeout;
+  do {
+    const text = await editor.innerText().catch(() => '');
+    if (!text.replace(INVISIBLE, '').trim()) return true;
+    await page.waitForTimeout(200);
+  } while (Date.now() < deadline);
+  return false;
+}
+
+/** Non-sensitive state for the error message: no prompt or page text leaves. */
+async function m365SendDiagnostics(page: Page): Promise<string> {
+  const state = await page.evaluate(() => {
+    const editor = document.querySelector('#m365-chat-editor-target-element');
+    const send = [...document.querySelectorAll('button')].find(b => /^(Enviar|Send)/i.test(b.getAttribute('aria-label') || ''));
+    const security = [...document.querySelectorAll('button')].some(b => /verificação de segurança|security check/i.test(b.getAttribute('aria-label') || '') && b.getClientRects().length > 0);
+    return { textLeft: !!(editor?.textContent || '').replace(new RegExp('[' + String.fromCharCode(0x200b) + '-' + String.fromCharCode(0x200d, 0x2060, 0xfeff) + ']', 'g'), '').trim(),
+      sendDisabled: !!send && (send.hasAttribute('disabled') || send.getAttribute('aria-disabled') === 'true'), security };
+  }).catch(() => null);
+  if (!state) return '';
+  return ` (prompt left in composer: ${state.textLeft}; send disabled: ${state.sendDisabled}; security notice: ${state.security})`;
+}
+
+export type CopilotPageProbe ={ origin: string; anonymous: boolean; composer: boolean; userStatus: number | null; tier: string | null; m365?: boolean };
 /** Login evidence from the site itself: the anonymous block page, the composer and the
  * account tier the frontend received from `GET /c/api/user` (`guest` when anonymous).
  * The Microsoft 365 Copilot app renders its editor only for a signed-in account. */
@@ -68,6 +113,7 @@ export class CopilotProvider implements ProviderAdapter {
   private manualLogin = false;
   private transitioning = false;
   private authenticated = false;
+  private verificationRequired = false;
   private checkedAt: string | null = null;
   private state: ProviderStatus['state'] = 'not_initialized';
   private availableModels: ProviderModel[] = [];
@@ -223,7 +269,8 @@ export class CopilotProvider implements ProviderAdapter {
       try { await this.validate(0); }
       catch (error) { this.state = error instanceof UpstreamError && error.status === 401 ? 'login_required' : 'unavailable'; }
     }
-    return { ...this.guard.status(), state: this.guard.status().block?.state ?? this.state, authenticated: this.authenticated,
+    return { ...this.guard.status(), state: this.verificationRequired ? 'unavailable' : this.guard.status().block?.state ?? this.state, authenticated: this.authenticated,
+      confirmationRequired: this.verificationRequired,
       sessionSaved: await this.session.hasSavedSession(), checkedAt: this.checkedAt,
       originalMessage: this.state === 'rate_limited' ? 'Limite de uso do Copilot atingido.' : null };
   }
@@ -261,6 +308,13 @@ export class CopilotProvider implements ProviderAdapter {
    * button (no aria-haspopup); reset first, then open the menu and pick the mode. */
   private async selectMode(mode: string): Promise<void> {
     const page = this.page!;
+    if (this.m365App) {
+      if (mode !== 'auto') throw new UpstreamError('Requested Copilot model is not selectable on this account.', 400);
+      const trigger = page.locator('#gptModeSwitcher');
+      if (!/^Auto$/i.test((await trigger.innerText({timeout:5000})).trim()))
+        throw new UpstreamError('Select Auto in the Microsoft 365 Copilot browser before retrying.', 400);
+      return;
+    }
     const trigger = () => page.locator(MODE_TRIGGER).first();
     if (mode === 'auto') {
       // `auto` is the site's default mode: undo a sticky selection from an earlier request.
@@ -328,10 +382,8 @@ export class CopilotProvider implements ProviderAdapter {
       await this.pageMutex.withLock(() => withGenerationSignal(controller.signal, async () => {
         controller.signal.throwIfAborted();
         interaction = 'opening chat'; await this.navigate();
-        interaction = 'authentication'; await this.validate();
-        // Sending through the Microsoft 365 Copilot app (SignalR Chathub on substrate.office.com) is not built yet.
-        if (this.m365App) throw new UpstreamError('Copilot: o envio pelo app Microsoft 365 Copilot (copilot.com) ainda não está disponível no proxy.', 503);
-        const editor = page!.locator(COPILOT_SELECTORS.editor).first();
+        interaction = 'authentication'; await this.validate(); this.verificationRequired = false;
+        const editor = page!.locator(this.m365App ? COPILOT_SELECTORS.m365Editor : COPILOT_SELECTORS.editor).first();
         interaction = 'waiting for editor';
         await editor.waitFor({ state: 'visible', timeout: 30_000 });
         interaction = 'selecting model'; await this.selectMode(mode); controller.signal.throwIfAborted();
@@ -341,14 +393,22 @@ export class CopilotProvider implements ProviderAdapter {
         }, { prompt, mode });
         interaction = 'filling editor';
         await editor.click({ timeout: 10_000 });
-        await editor.fill(prompt, { timeout: 10_000 });
+        if (this.m365App) await fillM365Editor(page!, editor, prompt);
+        else await editor.fill(prompt, { timeout: 10_000 });
         // The composer enforces a character limit; never send a silently truncated prompt.
-        if ((await editor.inputValue()).length < prompt.length)
+        if (visibleLength(this.m365App ? await editor.innerText() : await editor.inputValue()) < visibleLength(prompt))
           throw new UpstreamError('Prompt exceeds the Copilot composer limit; reduce the context.', 413);
         controller.signal.throwIfAborted();
         interaction = 'clicking send';
         // The site navigates to /chats/<id> after submission; the capture owns completion.
-        await page!.locator(COPILOT_SELECTORS.send).first().click({ timeout: 10_000, noWaitAfter: true });
+        const send = this.m365App ? page!.getByRole('button', {name:/^(Enviar|Send)(?: mensagem| message)?$/i}).first() : page!.locator(COPILOT_SELECTORS.send).first();
+        await send.click({ timeout: 10_000, noWaitAfter: true });
+        // Microsoft 365: a click on a composer whose editor state is stale leaves the
+        // text in place. Enter submits like a person would; never type it twice.
+        if (this.m365App && !await m365Submitted(page!, editor)) {
+          await editor.press('Enter', { timeout: 5000, noWaitAfter: true });
+          await m365Submitted(page!, editor);
+        }
         controller.signal.throwIfAborted();
       }));
       setupDone = true;
@@ -364,8 +424,14 @@ export class CopilotProvider implements ProviderAdapter {
             const chunks: string[] = c.chunks.splice(0); c.bytes = 0;
             return { chunks, claimed: !!c.claimed, done: !!c.done, error: c.error as string | undefined };
           });
-          if (!part.claimed && Date.now() > claimDeadline)
-            throw new UpstreamError('Copilot did not send the message over its chat socket; verify the browser.', 502);
+          if (!part.claimed && await page!.locator('iframe[src*="challenges.cloudflare.com"]').first().isVisible().catch(() => false)) {
+            self.verificationRequired = true;
+            throw new UpstreamError('Copilot exige verificação humana no navegador. Abra Conectar e conclua a verificação antes de tentar novamente.', 503);
+          }
+          if (!part.claimed && Date.now() > claimDeadline) {
+            const detail = self.m365App ? await m365SendDiagnostics(page!) : '';
+            throw new UpstreamError(`Copilot did not send the message over its chat socket; verify the browser.${detail}`, 502);
+          }
           // Service events (errors, limits, completion) are decoded first.
           for (const chunk of part.chunks) yield chunk;
           if (part.error === 'mode_mismatch') throw new UpstreamError('Copilot did not honor the requested model.', 400);

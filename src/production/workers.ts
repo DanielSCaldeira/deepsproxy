@@ -83,7 +83,9 @@ export class Workers {
     }
   }
   async ensure(id: string): Promise<Worker> {
-    return this.mutex.withLock(async () => {
+    return this.mutex.withLock(() => this.start(id));
+  }
+  private async start(id: string): Promise<Worker> {
       const existing = this.workers.get(id);
       if (existing) { existing.lastUsed = Date.now(); return existing; }
       if (this.workers.size >= this.config.maxWorkers) throw new HttpError(503, 'Capacidade ocupada. Tente novamente em instantes.', 'capacity_full');
@@ -91,7 +93,6 @@ export class Workers {
       const item = { id, host: worker.host, lastUsed: Date.now(), failures: 0 };
       this.workers.set(id, item);
       return item;
-    });
   }
   async request(id: string, path: string, init: RequestInit = {}, start = true) {
     const worker = start ? await this.ensure(id) : this.workers.get(id);
@@ -106,7 +107,8 @@ export class Workers {
       throw new HttpError(502,'Navegador indisponível. Tente recuperar a conexão pelo painel.','browser_unavailable');
     }
   }
-  async status(id: string) {
+  async status(id: string): Promise<any> {
+    const observedWorker = this.workers.get(id);
     let snapshot = this.snapshots.get(id) || { state: 'not_initialized', sessionSaved: false, checkedAt: null };
     let runtimeState = this.workers.has(id) ? 'running' : 'sleeping';
     if (runtimeState === 'running' && (!this.queue(id).active || this.logins.has(id))) {
@@ -129,8 +131,12 @@ export class Workers {
             if (Array.isArray(data)) snapshot.models = data.map((m: any) => m.id).filter((m: unknown) => typeof m === 'string' && (account.provider === 'deepseek' ? m.startsWith('deepseek-') : m.startsWith(account.provider + '/')));
           }
         }
+        if (this.workers.get(id) !== observedWorker) return this.status(id);
         await this.remember(id, snapshot);
-      } catch { runtimeState = 'unavailable'; }
+      } catch {
+        if (this.workers.get(id) !== observedWorker) return this.status(id);
+        runtimeState = 'unavailable';
+      }
     }
     return { ...snapshot, accountState: snapshot.state, state: runtimeState === 'running' ? snapshot.state : runtimeState,
       runtimeState, busy: this.queue(id).active, loginActive: this.logins.has(id), queueDepth: this.queue(id).depth };
@@ -242,19 +248,21 @@ export class Workers {
         const response = await this.request(id, '/health', {}, false);
         if (!response?.ok) throw new Error('health');
         const status=await this.status(id);
+        if (this.workers.get(id) !== worker) continue;
+        if (status.confirmationRequired) continue;
         if (status.runtimeState==='unavailable' || ['unavailable','not_initialized'].includes(status.accountState)) throw new Error('browser');
         this.recoveryFailures.delete(id); this.recoveryAfter.delete(id);
       } catch {
+        if (this.workers.get(id) !== worker) continue;
         const failures = (this.recoveryFailures.get(id) || 0) + 1;
         this.recoveryFailures.set(id, failures);
         if (failures <= 3) {
           this.recoveryAfter.set(id,Date.now()+5000*2**(failures-1));
-          let stopped=false;
           await this.mutex.withLock(async () => {
-            if(this.queue(id).active) return;
-            await this.provision('stop',id); this.workers.delete(id); stopped=true;
+            if(this.workers.get(id)!==worker || this.queue(id).active || this.logins.has(id)) return;
+            await this.provision('stop',id); this.workers.delete(id);
+            await this.start(id).catch(() => undefined);
           });
-          if(stopped) await this.ensure(id).catch(() => undefined);
         }
       }
     }

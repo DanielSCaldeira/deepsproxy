@@ -11,6 +11,8 @@ export function installGrokCapture(): void {
     let matching = false;
     try {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (capture && !capture.claimed && url.origin === location.origin && url.pathname === '/' &&
+          (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase() === 'POST') capture.renderedTransport = true;
       const candidate = !!capture && !capture.claimed && url.origin === location.origin &&
         /^\/rest\/app-chat\/conversations\/new\/?$/.test(url.pathname);
       const body = candidate ? (typeof init?.body === 'string' ? JSON.parse(init.body) :

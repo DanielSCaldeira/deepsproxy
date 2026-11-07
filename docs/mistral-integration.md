@@ -210,3 +210,15 @@ Nada abaixo foi verificado:
 8. Mensagens de limite e cota reais (HTTP 429/códigos) e a indicação no painel.
 9. Comportamento com o desafio Cloudflare no worker e com `/api/chat/resume`
    (retomada após queda de rede não é tratada; a geração falha sem reenvio).
+# Atualização dos testes autenticados — 2026-11-06
+
+O site redirecionou `/chat` para `/work` (Vibe Work). O compositor recolhido
+mostra “Digite / para acesso rápido”; após o clique, o editor é
+`.rich-text-editor.ProseMirror[contenteditable=true]`. O adaptador espera a
+hidratação e repete apenas a abertura do editor quando o nó é substituído.
+O botão do modelo usa aria-label “Selecionar modelo” e texto “Rápido”.
+
+Foi observado envio real `POST /api/chat` com resposta `TESTE_CORRECAO_OK`.
+Somente `contentChunks` do tipo `text` são encaminhados; o campo agregado
+`content` pode misturar raciocínio interno e não serve como fallback. As
+correções de hidratação e isolamento do texto possuem testes de regressão.

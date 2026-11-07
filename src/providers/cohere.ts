@@ -283,13 +283,13 @@ export class CohereProvider implements ProviderAdapter {
           // Never resend: an unclaimed request may still have been dispatched by another path.
           if (!part.claimed && Date.now() > claimDeadline)
             throw new UpstreamError('Cohere did not send a supported chat request; verify the browser.', 502);
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = part.error === 'model_mismatch' ? new UpstreamError('Cohere did not honor the requested model.', 400)
               : part.error === 'stale_history' ? new UpstreamError('Cohere playground kept a previous conversation; request not sent.', 502)
               : cohereError(part.status ?? 502, part.code);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

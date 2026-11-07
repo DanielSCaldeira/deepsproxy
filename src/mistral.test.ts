@@ -8,7 +8,9 @@ import { mistralError, mistralModels, parseMistralStream } from './providers/mis
 import { inspectMistralPage, installMistralCapture } from './providers/mistral-browser.ts';
 import { isProviderId, providerId, providerIdForModel } from './providers/catalog.ts';
 import { interactiveWorkerArguments } from './services/interactive-browser.ts';
-import { MistralProvider } from './providers/mistral.ts';
+import { MistralProvider, withMistralOutputRules } from './providers/mistral.ts';
+// The fixture reads the editor's innerText, which renders paragraph breaks as blank lines.
+const lines = (text: string) => text.replace(/\n+/g, '\n');
 import { getProvider } from './providers/registry.ts';
 import { apiError } from './utils/api-error.ts';
 import { GenerationGuard, UpstreamError } from './services/generation-guard.ts';
@@ -47,6 +49,24 @@ test('Mistral catalog and routing advertise only observed modes', () => {
   assert.equal(mistralError(401).status, 401);
 });
 
+test('Mistral opens the collapsed /work composer after hydration replaces its placeholder', async () => {
+  const browser = await chromium.launch(), provider = new MistralProvider();
+  try {
+    const context = await browser.newContext(), page = await context.newPage();
+    Object.assign(provider,{context,page});
+    await page.route('https://chat.mistral.ai/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:`
+      <div class="_chat-input-bar_fixture"><span>Digite / para acesso rápido</span></div>
+      <script>let clicks=0;const bar=document.querySelector('div');
+        bar.onclick=()=>{clicks++;window.clicks=clicks;if(clicks===1){bar.innerHTML='<span>Digite / para acesso rápido</span>';return;}
+          bar.innerHTML='<div class="rich-text-editor ProseMirror" contenteditable="true" style="min-height:24px"> </div>';};
+        history.replaceState(null,'','/work');
+      </script>`}));
+    await (provider as any).navigate();
+    assert.equal(await page.locator('.rich-text-editor[contenteditable=true]').isVisible(),true);
+    assert.equal(await page.evaluate(()=>(window as any).clicks),2);
+  } finally {await provider.close();await browser.close();}
+});
+
 test('Mistral stream parts: assistant patches only, split Unicode, CRLF, formatting and hidden chunks', async () => {
   const stream = (replace('Leia o arquivo', 'u1', 'user') + '0:"ignorado"\n' + replace('Olá') + append(' Olá\n```ts\nx()\n```') +
     patch([{ op: 'add', path: '/contentChunks/-', value: { type: 'thinking', text: 'privado' } }]) +
@@ -58,6 +78,12 @@ test('Mistral stream parts: assistant patches only, split Unicode, CRLF, formatt
   assert.doesNotMatch(content(values), /privado|ignorado|Leia/);
   // Single-character chunks split surrogate pairs and line framing.
   assert.equal(content(await collect(parseMistralStream(chunks(replace('ção 🙂') + done)))), 'ção 🙂');
+});
+
+test('Mistral ignores the aggregate content while typed answer chunks initialize', async () => {
+  const stream = patch([{op:'replace',path:'/',value:{id:'m1',role:'assistant',content:'PRIVATE_THINKING'}}]) +
+    patch([{op:'replace',path:'/contentChunks',value:[{type:'thinking',text:'PRIVATE_THINKING'},{type:'text',text:'ANSWER_OK'}]}]) + done;
+  assert.equal(content(await collect(parseMistralStream(chunks(stream,3)))),'ANSWER_OK');
 });
 
 test('Mistral bootstrap seeds messages; patches follow RFC 6902 and the body end completes', async () => {
@@ -163,7 +189,7 @@ test('Mistral browser capture ignores telemetry and JSON mutations, follows the 
 function composer(sendButton = true) {
   return `<form id="composer"><button type="submit" hidden></button>
     <div data-composer-editor="true"><div class="ProseMirror" contenteditable="true" data-placeholder="Ask anything"><p><br></p></div></div>
-    <button type="button" id="mode" aria-haspopup="menu"><svg></svg><span>Fast</span><svg></svg></button>
+    <button type="button" id="mode" aria-label="Selecionar modelo" aria-haspopup="menu"><svg></svg><span>Fast</span><svg></svg></button>
     <button type="button" aria-label="Voice Mode"></button>
     ${sendButton ? '<button type="submit" id="send" aria-label="Send" hidden></button>' : ''}
     <div id="menu" role="menu" hidden><div role="menuitemradio" data-mode="Fast">Fast<span>Get answers fast</span></div><div role="menuitemradio" data-mode="Think">Think<span>Handle complex tasks</span></div></div>
@@ -215,13 +241,13 @@ test('Mistral frontend fixture: signed-in account, modes, generation, tools, quo
     assert.deepEqual(await provider.models(), [{ id: 'mistral/fast', contextLength: 0 }, { id: 'mistral/think', contextLength: 0 }]);
     const result = await collect(await provider.generate('Teste', 'mistral/fast', false));
     assert.equal(content(result), 'Olá do fixture'); assert.equal(guard.status().busy, false);
-    assert.deepEqual(prompts.at(-1), { text: 'Teste', mode: 'fast' });
+    assert.deepEqual({ ...prompts.at(-1), text: lines(prompts.at(-1)!.text) }, { text: lines(withMistralOutputRules('Teste')), mode: 'fast' });
     assert.equal(content(await collect(await provider.generate('Pense nisto', 'mistral/think', false))), 'Olá do fixture');
-    assert.deepEqual(prompts.at(-1), { text: 'Pense nisto', mode: 'think' });
+    assert.deepEqual({ ...prompts.at(-1), text: lines(prompts.at(-1)!.text) }, { text: lines(withMistralOutputRules('Pense nisto')), mode: 'think' });
     await assert.rejects(() => provider.generate('x', 'mistral/unknown', false), (e: any) => e.status === 400);
     sendButton = false; // Without a visible send control, Enter submits as a person would.
     assert.equal(content(await collect(await provider.generate('Enviar com Enter', 'mistral/fast', false))), 'Olá do fixture');
-    assert.equal(prompts.at(-1)!.text, 'Enviar com Enter'); sendButton = true;
+    assert.equal(lines(prompts.at(-1)!.text), lines(withMistralOutputRules('Enviar com Enter'))); sendButton = true;
     const { app } = await import('./index.ts');
     const headers = { 'content-type': 'application/json', ...(process.env.API_KEY ? { authorization: `Bearer ${process.env.API_KEY}` } : {}) };
     const models = await (await app.request('/v1/models', { headers })).json();
@@ -312,4 +338,16 @@ test('Mistral early manual confirmation reopens login; a visitor session is not 
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('Mistral prompt ends with explicit output rules; tool rules only when tools are offered', () => {
+  const plain = withMistralOutputRules('User: Responda apenas: TESTE_PROXY_OK\n\n');
+  assert.ok(plain.startsWith('User: Responda apenas: TESTE_PROXY_OK\n\nOUTPUT RULES (mandatory):'));
+  assert.match(plain, /never write sentences like "The user wants\.\.\."/);
+  assert.doesNotMatch(plain, /<tool_call>/);
+  assert.doesNotMatch(plain, /^- /m, 'the rich-text editor would turn dashes into a list');
+  const tools = withMistralOutputRules('Tools: []\nTo call a listed tool, output <tool_call>{}</tool_call>\n\nUser: ler');
+  const tail = tools.split('OUTPUT RULES')[1];
+  assert.match(tail, /output only the tool call blocks in the format given above/);
+  assert.doesNotMatch(tail, /<tool_call>/, 'a second tool template made the site answer HTTP 500');
 });

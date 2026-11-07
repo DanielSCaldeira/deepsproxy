@@ -14,8 +14,8 @@ const ORIGIN = 'https://chat.mistral.ai';
 const CHAT_URL = ORIGIN + '/chat';
 // Observed (public HTML, 2026-11-06): a ProseMirror editor inside
 // `[data-composer-editor]` within the composer form, placeholder "Ask anything".
-const EDITOR = '[data-composer-editor] [contenteditable="true"]:visible, form [contenteditable="true"].ProseMirror:visible';
-const COMPOSER_FORM = 'form:has([data-composer-editor]), form:has([contenteditable="true"].ProseMirror)';
+const EDITOR = '[data-composer-editor] [contenteditable="true"]:visible, form [contenteditable="true"].ProseMirror:visible, .rich-text-editor.ProseMirror[contenteditable="true"]:visible';
+const COMPOSER_FORM = 'form:has([data-composer-editor]), form:has([contenteditable="true"].ProseMirror), [class*="_chat-input-bar"]';
 const FORMS = COMPOSER_FORM.split(', ');
 // Bundle (2026-11-06): the primary action is a `type="submit"` button labelled by
 // `message_input.send_message_button` ("Send"; "Cannot send empty message" when empty),
@@ -26,6 +26,25 @@ const SEND = ['Send', 'Enviar'].flatMap(label => FORMS.map(form =>
 const STOP = 'button[aria-label="Stop generation"], button[aria-label="Parar geração"]';
 const MODE_LABEL = /^\s*(Fast|Think|Thinking|Rápido|Pensar|Raciocínio)\s*$/i;
 const SIGN_IN = 'button:text-is("Sign in"), button:text-is("Entrar")';
+
+/** Observed 2026-11-07: Mistral's fast model writes its interpretation of the
+ * request ("The user wants me to...") as a normal text chunk before the answer.
+ * The stream gives no way to tell them apart, so the prompt states the output
+ * contract explicitly at the end, where this model follows it best. */
+export function withMistralOutputRules(prompt: string): string {
+  // One plain paragraph: the rich-text editor turns "- " lines into list items,
+  // and the capture correlates the request by the exact prompt text.
+  const rules = [
+    'OUTPUT RULES (mandatory):',
+    'Write only the final answer. Do not restate, describe, analyze or plan the request; never write sentences like "The user wants...".',
+    'When an exact text is requested, output exactly that text and nothing else.',
+  ];
+  // The tool format is already stated above; repeating a second <tool_call>
+  // template made the site answer HTTP 500 twice (2026-11-07). Plain words only.
+  if (prompt.includes('<tool_call>')) rules.push(
+    'When a tool must be called, output only the tool call blocks in the format given above, with strict JSON and no Markdown or code fences, then stop.');
+  return `${prompt.trimEnd()}\n\n${rules.join(' ')}`;
+}
 
 /** One account per worker. The website prepares and sends its own requests. */
 export class MistralProvider implements ProviderAdapter {
@@ -83,6 +102,14 @@ export class MistralProvider implements ProviderAdapter {
     if (!this.page) throw new UpstreamError('Mistral browser unavailable.', 503);
     await pauseBeforeProviderAction('open-chat');
     await this.page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    const deadline = Date.now() + 20_000;
+    while (!await this.page.locator(EDITOR).first().isVisible().catch(() => false) && Date.now() < deadline) {
+      if (await this.page.locator(SIGN_IN).first().isVisible().catch(() => false)) return;
+      // The /chat → /work redirect can replace the collapsed input during hydration.
+      const placeholder = this.page.getByText(/^(Digite \/ para acesso rápido|Type \/ for quick access)$/).first();
+      if (await placeholder.isVisible().catch(() => false)) await placeholder.click({ timeout: 1500 }).catch(() => {});
+      await this.page.locator(EDITOR).first().waitFor({state:'visible',timeout:1000}).catch(() => {});
+    }
   }
   getActivePage() { return this.page; }
   isReady() { return this.transitioning || (this.manualLogin ? !!this.interactive?.running : !!this.page && !this.page.isClosed()); }
@@ -171,7 +198,9 @@ export class MistralProvider implements ProviderAdapter {
   }
   private async currentMode(): Promise<string> {
     const button = this.modeButton();
-    return ((await button.getAttribute('aria-label', { timeout: 3000 }).catch(() => null)) || (await button.textContent({ timeout: 3000 }).catch(() => '')) || '').trim();
+    const aria = await button.getAttribute('aria-label', { timeout: 3000 }).catch(() => null);
+    const text = (await button.textContent({ timeout: 3000 }).catch(() => '') ?? '').trim();
+    return (aria && MODE_LABEL.test(aria) ? aria : text || aria || '').trim();
   }
   private menuItems() {
     const page = this.page!;
@@ -230,6 +259,7 @@ export class MistralProvider implements ProviderAdapter {
     if (!model.startsWith('mistral/') || this.manualLogin || this.transitioning)
       throw new UpstreamError('Mistral model unavailable or login is required.', this.manualLogin ? 401 : 400);
     signal?.throwIfAborted();
+    prompt = withMistralOutputRules(prompt);
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener('abort', abort, { once: true });
@@ -269,7 +299,7 @@ export class MistralProvider implements ProviderAdapter {
         // Reacquire after focus in case hydration replaced the node.
         interaction = 'waiting for editor';
         await page!.locator(EDITOR).first().waitFor({ state: 'visible', timeout: 30_000 });
-        if (!/^\/chat\/?$/.test(new URL(page!.url()).pathname)) throw new UpstreamError('Mistral did not open a new conversation.', 502);
+        if (!/^\/(?:chat|work)\/?$/.test(new URL(page!.url()).pathname)) throw new UpstreamError('Mistral did not open a new conversation.', 502);
         interaction = 'selecting model'; await this.selectModel(model); controller.signal.throwIfAborted();
         await pauseBeforeProviderAction('send-message');
         await page!.evaluate(({ prompt }) => {
@@ -306,8 +336,8 @@ export class MistralProvider implements ProviderAdapter {
             if (visible?.limit) throw mistralError(429, visible.limit === 'capacity' ? 'at_capacity' : 'quota');
             throw new UpstreamError('Mistral did not send a supported conversation request; verify the browser.', 502);
           }
-          if (part.error) { const error = mistralError(part.status ?? 502, part.code); self.rememberError(error, part.retryAfter); throw error; }
           for (const chunk of part.chunks) yield chunk;
+          if (part.error) { const error = mistralError(part.status ?? 502, part.code); self.rememberError(error, part.retryAfter); throw error; }
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

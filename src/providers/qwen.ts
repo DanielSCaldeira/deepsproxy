@@ -157,6 +157,11 @@ export class QwenProvider implements ProviderAdapter {
     return response;
   }
   private async validate(signal?: AbortSignal): Promise<void> {
+    if (!this.token) await this.waitForToken();
+    if (!this.token && this.page) {
+      const stored = await this.page.evaluate(() => localStorage.getItem('token')).catch(() => null);
+      if (stored?.trim()) this.token = /^Bearer /i.test(stored) ? stored : `Bearer ${stored}`;
+    }
     if (!this.token) throw new UpstreamError('Qwen login is required; complete login in the browser.', 401);
     // /users/status is frontend telemetry, including for guests. Only the auth
     // service's successful user response proves this is a signed-in session.

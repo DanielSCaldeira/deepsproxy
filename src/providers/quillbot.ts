@@ -244,11 +244,11 @@ export class QuillBotProvider implements ProviderAdapter {
           });
           if (!part.claimed && Date.now() > claimDeadline)
             throw new UpstreamError('QuillBot did not send a supported conversation request; verify the browser.', 502);
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = quillBotError(part.status ?? 502, part.code);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

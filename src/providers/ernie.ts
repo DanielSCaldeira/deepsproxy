@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from 'playwright';
+import type { BrowserContext, Locator, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
@@ -126,11 +126,11 @@ export class ErnieProvider implements ProviderAdapter {
     this.checkedAt = new Date().toISOString();
     if (result.captcha) { this.state = 'unavailable'; throw ernieError(503, 'security_verification'); }
     if (result.status !== 200 || result.login === null) { this.state = 'unavailable'; throw ernieError(result.status === 200 ? 502 : result.status); }
+    // The chat also works as a visitor (`isUserLogin: 0`): signing in only syncs
+    // history. A Baidu login is optional, so a visitor session is usable.
     this.authenticated = result.login;
-    if (!this.authenticated) {
-      this.state = 'login_required'; this.catalog = [];
-      throw new UpstreamError('Ernie login is required; complete login in the browser.', 401);
-    }
+    // A login_required block from older versions is stale once the chat is reachable.
+    if (this.guard.status().block?.state === 'login_required') this.guard.confirmInteractiveLogin();
     this.notice = null;
     this.state = (this.guard.status().block?.state === 'suspended' ? 'suspended' : undefined) ??
       (this.guard.status().rateLimitUntil ? 'rate_limited' : 'authenticated');
@@ -183,12 +183,15 @@ export class ErnieProvider implements ProviderAdapter {
       if (!await page.locator(MODEL_ROW).first().isVisible().catch(() => false)) await button.click({ timeout: 5000 });
     }
     const menu = page.locator(MODEL_MENU).first();
-    if (!await menu.isVisible().catch(() => false)) {
+    const shown = (locator: Locator, timeout: number) => locator.waitFor({ state: 'visible', timeout }).then(() => true, () => false);
+    // Observed 2026-11-07: the mode panel animates in and re-renders the model row,
+    // so a click can hit a detached or moving element. Retry with a fresh locator.
+    for (let attempt = 0; attempt < 3 && !await shown(menu, attempt ? 1500 : 300); attempt++) {
       const row = page.locator(MODEL_ROW).first();
-      if (!await row.isVisible().catch(() => false)) return false;
-      await row.click({ timeout: 5000 });
+      if (!await shown(row, 3000)) return false;
+      await row.click({ timeout: 3000 }).catch(() => {});
     }
-    return menu.isVisible().catch(() => false);
+    return shown(menu, 1500);
   }
   private async selectableModels(): Promise<ProviderModel[]> {
     const page = this.page;
@@ -310,11 +313,11 @@ export class ErnieProvider implements ProviderAdapter {
           if (part.missing) throw new UpstreamError('Ernie capture unavailable; verify the browser before retrying.', 502);
           if (!part.claimed && Date.now() > claimDeadline)
             throw new UpstreamError('Ernie did not send a supported conversation request; verify the browser.', 502);
+          for (const chunk of part.chunks) yield chunk;
           if (part.error) {
             const error = part.error === 'model_mismatch' ? new UpstreamError('Ernie did not honor the requested model.', 400) : ernieError(part.status ?? 502);
             self.rememberError(error, part.retryAfter); throw error;
           }
-          for (const chunk of part.chunks) yield chunk;
           if (part.done) return;
           await delay(100, undefined, { signal: controller.signal });
         }

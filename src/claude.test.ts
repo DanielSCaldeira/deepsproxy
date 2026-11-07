@@ -173,6 +173,38 @@ const composer = `<fieldset><div data-testid="chat-input" contenteditable="true"
     };
   </script>`;
 
+test('Claude RPC frontend returns only its new completed reply without resending', async () => {
+  const browser = await chromium.launch(), provider = new ClaudeProvider();
+  try {
+    const context = await browser.newContext(); await context.addInitScript(installClaudeCapture);
+    const page = await context.newPage();
+    Object.assign(provider, { context, page, guard: new GenerationGuard(undefined, Date.now, () => 0, async () => {}) });
+    let submissions = 0;
+    await page.route('https://claude.ai/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/api/organizations') return route.fulfill({json:[{uuid:'fixture-org'}]});
+      if (path.endsWith('/PerformAction')) { submissions++; return route.fulfill({json:{}}); }
+      return route.fulfill({contentType:'text/html',body:`
+        <div data-testid="assistant-message" data-is-streaming="false"><div data-perf-reply-text>OLD_REPLY</div></div>
+        <div data-testid="chat-input" contenteditable="true" role="textbox"></div>
+        <button data-testid="chat-input-send">Enviar</button>
+        <script>document.querySelector('button').onclick=async()=>{
+          await fetch('/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction',{method:'POST',body:'rpc'});
+          const reply=document.createElement('div');reply.dataset.testid='assistant-message';reply.dataset.isStreaming='true';
+          reply.innerHTML='<div data-perf-reply-text>partial</div>';document.body.append(reply);
+          setTimeout(()=>{reply.firstElementChild.textContent='rendered curly quotes';reply.dataset.isStreaming='false';
+            const copy=document.createElement('button');copy.setAttribute('aria-label','Copiar');
+            copy.onclick=()=>navigator.clipboard.writeText('<tool_call>{"name":"lookup","arguments":{}}</tool_call>');reply.append(copy);},100);
+        };</script>`});
+    });
+    await page.goto('https://claude.ai/new');
+    const events = await collect(await provider.generate('Responda com o valor do teste.', 'claude/auto', false));
+    assert.equal(events.filter(e=>e.type==='content').map(e=>e.text).join(''), '<tool_call>{"name":"lookup","arguments":{}}</tool_call>');
+    assert.equal(submissions, 1);
+    assert.equal((provider as any).guard.status().busy, false);
+  } finally { await provider.close(); await browser.close(); }
+});
+
 test('Claude frontend fixture: authenticated account, model selection, generation, quota, expiry and guard release', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'claude-fixture-'));
   const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;

@@ -163,6 +163,38 @@ async function copilotFixture(context: BrowserContext, fixture: Fixture) {
     body: '<form><input type="email" name="loginfmt" aria-label="Email, telefone ou Skype"></form>' }));
 }
 
+test('Microsoft 365 Copilot sends through its native editor and correlates the SignalR invocation', async () => {
+  const browser = await chromium.launch(), provider = new CopilotProvider();
+  try {
+    const context = await browser.newContext();
+    let submissions = 0;
+    await context.routeWebSocket('wss://substrate.office.com/**', socket => socket.onMessage(data => {
+      for (const raw of String(data).split('\u001e').filter(Boolean)) {
+        const value = JSON.parse(raw);
+        if (!value.arguments?.[0]?.message?.text) continue;
+        submissions++;
+        socket.send(JSON.stringify({type:2,invocationId:'unrelated',item:{messages:[{author:'bot',text:'WRONG'}]}})+'\u001e');
+        socket.send(JSON.stringify({type:1,arguments:[{messages:[{author:'bot',text:'partial'}]}]})+'\u001e');
+        socket.send(JSON.stringify({type:2,invocationId:value.invocationId,item:{result:{value:'Success'},messages:[{author:'bot',text:'M365_OK'}]}})+'\u001e');
+      }
+    }));
+    await context.addInitScript(installCopilotCapture);
+    await context.route('https://copilot.microsoft.com/**', route => route.fulfill({contentType:'text/html',body:'<div data-testid="region-block-title">Region</div>'}));
+    await context.route('https://copilot.com/**', route => route.fulfill({contentType:'text/html',body:`
+      <span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" style="display:inline-block;min-width:300px;min-height:24px"></span>
+      <button id="gptModeSwitcher">Auto</button><button aria-label="Enviar"></button>
+      <script>const socket=new WebSocket('wss://substrate.office.com/m365/Chathub');
+      document.querySelector('[aria-label=Enviar]').onclick=()=>socket.send(JSON.stringify({type:4,invocationId:'fixture',target:'chat',arguments:[{message:{text:document.querySelector('[contenteditable]').innerText}}]})+'\\u001e');</script>`}));
+    const page = await context.newPage(), guard = new GenerationGuard(undefined, Date.now, () => 0, async () => {});
+    Object.assign(provider,{context,page,guard});
+    await page.goto('https://copilot.com/chat');
+    assert.equal(text(await collect(await provider.generate('Teste M365', 'copilot/auto', false))), 'M365_OK');
+    assert.equal(submissions,1); assert.equal(guard.status().busy,false);
+    await assert.rejects(()=>provider.generate('Modelo bloqueado','copilot/reasoning',false),(e:any)=>e.status===400);
+    assert.equal(submissions,1);
+  } finally {await provider.close();await browser.close();}
+});
+
 test('Copilot frontend fixture: signed-in account, modes, generation, limits, expiry and guard release', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'copilot-fixture-'));
   const previous = process.env.PROVIDER_PROFILE_DIR; process.env.PROVIDER_PROFILE_DIR = directory;
@@ -319,9 +351,7 @@ test('Copilot region block falls back to the Microsoft 365 Copilot app for login
     const status = await provider.status();
     assert.equal(status.state, 'authenticated'); assert.equal(status.sessionSaved, true);
     assert.equal(new URL(provider.getActivePage()!.url()).origin, 'https://copilot.com');
-    // Sending through the Microsoft 365 app is not built yet: the error says so instead of waiting.
-    await assert.rejects(async () => collect(await provider.generate('Teste', 'copilot/auto', false)),
-      (error: any) => error.status === 503 && /Microsoft 365 Copilot/.test(error.message));
+    assert.deepEqual(await provider.models(), [{id:'copilot/auto',contextLength:0}]);
   } finally {
     await provider.close(); await browser.close();
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
@@ -400,4 +430,27 @@ test('Copilot early manual confirmation reopens login and successful confirmatio
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('Microsoft 365 composer: text goes through the editor state, Send dispatches it and the box empties', async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const { fillM365Editor, m365Submitted } = await import('./providers/copilot.ts');
+    // Like the real composer, the editor keeps its own state: DOM edits alone are not sent.
+    await page.setContent(`<span id="m365-chat-editor-target-element" role="textbox" contenteditable="true" style="display:inline-block;min-width:300px;min-height:20px"></span>
+      <button aria-label="Enviar">→</button>
+      <script>let model='';const editor=document.querySelector('#m365-chat-editor-target-element');window.sent=[];
+        editor.addEventListener('paste',e=>{e.preventDefault();model=e.clipboardData.getData('text/plain');editor.textContent=model;});
+        editor.addEventListener('keydown',e=>{if(e.key==='Delete'||e.key==='Backspace'){model='';}});
+        document.querySelector('button').onclick=()=>{if(!model)return;window.sent.push(model);model='';editor.textContent='';};
+      </script>`);
+    const editor = page.locator('#m365-chat-editor-target-element');
+    const prompt = 'System: siga o formato.\n\nUser: Responda apenas: TESTE_PROXY_OK';
+    await editor.click();
+    await fillM365Editor(page, editor, prompt);
+    await page.getByRole('button', { name: 'Enviar' }).click();
+    assert.equal(await m365Submitted(page, editor, 2000), true);
+    assert.deepEqual(await page.evaluate(() => (window as any).sent), [prompt]);
+  } finally { await browser.close(); }
 });

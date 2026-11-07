@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel } from './services/browser.ts';
+import { BROWSER_LOCALE, chromium, configureBrowserUserAgent, createBrowserPage, getBrowserChannel, focusChatEditor, readCopiedResponse } from './services/browser.ts';
 import { initPlaywright } from './services/playwright.ts';
 import { QwenProvider } from './providers/qwen.ts';
 
@@ -20,6 +20,46 @@ test('browser channel defaults to Chromium and accepts installed Chrome', () => 
     if (previous === undefined) delete process.env.PLAYWRIGHT_CHANNEL;
     else process.env.PLAYWRIGHT_CHANNEL = previous;
   }
+});
+
+test('copy capture preserves raw tool JSON and Markdown and restores clipboard methods', async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route('https://copy.test/**',route=>route.fulfill({contentType:'text/html',body:'<button id="text">Copy text</button><button id="item">Copy item</button>'}));
+    await page.goto('https://copy.test/');
+    const raw='<tool_call>{"name":"lookup","arguments":{"quote":"“hello”"}}</tool_call>\n```ts\nx()\n```';
+    await page.evaluate(raw=>{
+      const scope=globalThis as any;scope.osWrites=0;
+      navigator.clipboard.writeText=async function(){scope.osWrites++;};
+      scope.originalWrite=navigator.clipboard.writeText;
+      document.querySelector('#text')!.addEventListener('click',()=>navigator.clipboard.writeText(raw));
+      document.querySelector('#item')!.addEventListener('click',()=>navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([raw],{type:'text/plain'})})]));
+    },raw);
+    for(const selector of ['#text','#item']) {
+      assert.equal(await readCopiedResponse(page,page.locator(selector),'rendered wrong text'),raw);
+      assert.equal(await page.evaluate(()=>navigator.clipboard.writeText===(globalThis as any).originalWrite),true);
+      assert.equal(await page.evaluate(()=>(globalThis as any).osWrites),0);
+    }
+  } finally {await browser.close();}
+});
+
+test('cookie rejection and editor hydration do not block a chat action', async () => {
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext(), page = await createBrowserPage(context);
+    await page.route('https://composer.test/**', route => route.fulfill({ contentType: 'text/html', body: `
+      <textarea id="editor"></textarea><div role="dialog" style="position:fixed;inset:0;background:white;z-index:10">
+      Política de Cookies<button id="reject">Recusar opcionais</button></div>
+      <script>document.getElementById('reject').onclick=()=>{document.querySelector('[role=dialog]').remove();
+      document.getElementById('editor').outerHTML='<textarea id="editor" disabled></textarea>';
+      setTimeout(()=>document.getElementById('editor').disabled=false,50);};</script>` }));
+    await page.goto('https://composer.test/');
+    const editor = await focusChatEditor(page, '#editor');
+    await editor.fill('fixture prompt');
+    assert.equal(await editor.inputValue(), 'fixture prompt');
+    assert.equal(await page.locator('[role=dialog]').count(), 0);
+  } finally { await browser.close(); }
 });
 
 test('both providers release the profile lock when the browser channel is invalid', async () => {
