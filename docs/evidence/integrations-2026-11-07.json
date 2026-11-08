@@ -1,0 +1,5181 @@
+{
+  "generatedAt": "2026-11-08T02:26:58.407Z",
+  "sources": [
+    {
+      "path": ".cache/zed-validation-free-2026-11-07.json",
+      "sha256": "6f1709bf757f7d7e440970b93b4f299c38c2da74ef3869f5bfe58457c0b65f4d",
+      "startedAt": "2026-11-07T22:34:22.237Z",
+      "finishedAt": "2026-11-07T22:36:53.909Z",
+      "revision": "cb13b85bdc8506ca48c25f460b1c6572a806541b",
+      "fingerprint": "44ffb73593fa6a05a40c124f890c9ba892981437aac0f93fa2aebafae1717650",
+      "temporaryKeyRevoked": true
+    },
+    {
+      "path": ".cache/zed-validation-nvidia-fixed-2026-11-07.json",
+      "sha256": "9feb42f8468ff29db72260248b2bae4888463edd9be3bf295f62c854027796de",
+      "startedAt": "2026-11-07T22:39:57.215Z",
+      "finishedAt": "2026-11-07T22:44:24.756Z",
+      "revision": "cb13b85bdc8506ca48c25f460b1c6572a806541b",
+      "fingerprint": "99da99d906a2622ea7146586c6dce446d74ba5eae9eb97de94594382b2efcf02",
+      "temporaryKeyRevoked": true
+    },
+    {
+      "path": ".cache/zed-validation-2026-11-07.json",
+      "sha256": "9ea876b534ece4bade5d199b75ad7e78725d7476fd1a6be245291eee91804ea1",
+      "startedAt": "2026-11-07T22:32:23.445Z",
+      "finishedAt": null,
+      "revision": null,
+      "fingerprint": null,
+      "temporaryKeyRevoked": false
+    },
+    {
+      "path": ".cache/zed-validation-rep-2026-11-07.json",
+      "sha256": "6f4f7f615dd537bb6331c078cfa4edd4336a96c60c625bd27d9918430ec87275",
+      "startedAt": "2026-11-07T23:57:39.700Z",
+      "finishedAt": null,
+      "revision": "cb13b85bdc8506ca48c25f460b1c6572a806541b",
+      "fingerprint": "2c5966e2bf96ae9f4fb60ed39c6f4a46799b3cf47b1297d24cde1c48367d9958",
+      "temporaryKeyRevoked": false
+    },
+    {
+      "path": ".cache/zed-validation-rep2-2026-11-07.json",
+      "sha256": "8f06bf4f3e54f1d84aa67972efc29f3083438ed18ac63a480b8b4c4ca80e9702",
+      "startedAt": "2026-11-08T00:13:14.561Z",
+      "finishedAt": "2026-11-08T02:01:04.724Z",
+      "revision": "cb13b85bdc8506ca48c25f460b1c6572a806541b",
+      "fingerprint": "cb7cd52ca319ba19dd13d993010391c74779351162baba3d25d989ca7757a765",
+      "temporaryKeyRevoked": true
+    },
+    {
+      "path": ".cache/zed-replay/summary.json",
+      "sha256": "d6b29dae119a3f5c4e7e05b9d752e03c96c221dcededcd1b8107868881ca4a32",
+      "kind": "zed-replay"
+    }
+  ],
+  "providers": [
+    {
+      "provider": "nvidia",
+      "models": [
+        "nvidia/deepseek-ai/deepseek-v4.1-flash",
+        "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b"
+      ],
+      "cases": [
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 110959,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_unavailable",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 120071,
+          "clientTools": [],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "multiple/json",
+          "status": "unsupported",
+          "reason": "not_advertised",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "auto/stream",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_unavailable",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 121325,
+          "clientTools": [],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/deepseek-ai/deepseek-v4.1-flash",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 1612,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "auto/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 4881,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 2229,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 2252,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 4066,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 2078,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 1813,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "auto/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 6998,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 1752,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 2139,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 3491,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-nvidia-fixed-2026-11-07.json"
+        },
+        {
+          "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 1200,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "openrouter",
+      "models": [
+        "openrouter/recursive/flint-v1.0:free",
+        "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+        "openrouter/dots-studio/dots-3-note-preview:free",
+        "openrouter/cohere/north-mini-code:free",
+        "openrouter/google/gemma-4-26b-a4b-it:free",
+        "openrouter/google/gemma-4-31b-it:free",
+        "openrouter/openrouter/free"
+      ],
+      "cases": [
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 1521,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_400",
+          "code": "unsupported_parameter",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            400
+          ],
+          "elapsedMs": 38,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/recursive/flint-v1.0:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_400",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": "rate_limited",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            429
+          ],
+          "elapsedMs": 1269,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/xingchen-agi/xing4.0-29b-a4b:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/dots-studio/dots-3-note-preview:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/cohere/north-mini-code:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/google/gemma-4-31b-it:free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-free-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 1742,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_400",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            400
+          ],
+          "elapsedMs": 1091,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "http_400",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            400
+          ],
+          "elapsedMs": 1975,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": "rate_limited",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            429
+          ],
+          "elapsedMs": 397,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "openrouter/openrouter/free",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_429",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "chatgpt",
+      "models": [
+        "chatgpt/auto"
+      ],
+      "cases": [
+        {
+          "model": "chatgpt/auto",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 46791,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 149995,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 69587,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 69732,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 64777,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 75889,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 124249,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 84800,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 58207,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "chatgpt/auto",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 65055,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "claude",
+      "models": [
+        "claude/auto"
+      ],
+      "cases": [
+        {
+          "model": "claude/auto",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 36583,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 98771,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 49824,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 56769,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 59596,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 66018,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 106365,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 52485,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 56705,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "claude/auto",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 65671,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "cohere",
+      "models": [
+        "cohere/auto",
+        "cohere/c4ai-aya-expanse-32b",
+        "cohere/c4ai-aya-vision-32b",
+        "cohere/command-a-03-2025",
+        "cohere/command-a-reasoning-08-2025",
+        "cohere/command-a-translate-08-2025",
+        "cohere/command-r-08-2024",
+        "cohere/command-r-plus-08-2024",
+        "cohere/command-r7b-12-2024",
+        "cohere/command-r7b-arabic-02-2025",
+        "cohere/north-mini-code-1.0",
+        "cohere/north-small-translate-1.0",
+        "cohere/tiny-aya-earth",
+        "cohere/tiny-aya-fire",
+        "cohere/tiny-aya-global",
+        "cohere/tiny-aya-water"
+      ],
+      "cases": [
+        {
+          "model": "cohere/auto",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 30729,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 46874,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 47681,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 100810,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 56595,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 46968,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "none/json",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 47588,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 60417,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "required/stream",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 98269,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 58780,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 53496,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-expanse-32b",
+          "scenario": "none/stream",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 63927,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 51692,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 104573,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 61281,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 46926,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 60865,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 58561,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 111120,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 49702,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 43142,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/c4ai-aya-vision-32b",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 50913,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 56693,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 150084,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 96967,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 93320,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 59724,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 54858,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 133234,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 75998,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 77990,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-03-2025",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 60779,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 55987,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 51823,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "forced/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 65908,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-reasoning-08-2025",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 46053,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 95584,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 59291,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 55405,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 47162,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 49208,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 115447,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 61406,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 47717,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-a-translate-08-2025",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 59347,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-r-08-2024",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 57097,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-r-08-2024",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 98290,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-r-08-2024",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 55080,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-r-08-2024",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 64076,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/command-r-08-2024",
+          "scenario": "none/json",
+          "status": "running",
+          "reason": null,
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 60464,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        },
+        {
+          "model": "cohere/auto",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "copilot",
+      "models": [
+        "copilot/auto"
+      ],
+      "cases": [
+        {
+          "model": "copilot/auto",
+          "scenario": "text/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 166242,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 130657,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "copilot/auto",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_502",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "deepseek",
+      "models": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-thinking",
+        "deepseek-v4-pro",
+        "deepseek-v4-pro-thinking"
+      ],
+      "cases": [
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "deepseek-v4-flash",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "login_required",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "ernie",
+      "models": [
+        "ernie/smartMode",
+        "ernie/ERINE-5.1"
+      ],
+      "cases": [
+        {
+          "model": "ernie/smartMode",
+          "scenario": "text/json",
+          "status": "failed",
+          "reason": "http_500",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            500
+          ],
+          "elapsedMs": 5676,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "auto/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 98851,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 115049,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 106607,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 117468,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 74401,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 72468,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "auto/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 150817,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "required/stream",
+          "status": "failed",
+          "reason": "http_500",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            500
+          ],
+          "elapsedMs": 10679,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 119283,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 133428,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "ernie/smartMode",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 75602,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "gemini",
+      "models": [
+        "gemini/auto"
+      ],
+      "cases": [
+        {
+          "model": "gemini/auto",
+          "scenario": "text/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 55567,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "http_500",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            500
+          ],
+          "elapsedMs": 59529,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "gemini/auto",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "grok",
+      "models": [
+        "grok/fast",
+        "grok/build"
+      ],
+      "cases": [
+        {
+          "model": "grok/fast",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 81156,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "auto/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 199181,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 189844,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "forced/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 83938,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "multiple/json",
+          "status": "failed",
+          "reason": "http_500",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            500
+          ],
+          "elapsedMs": 8387,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "grok/fast",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "http_500",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "kimi",
+      "models": [
+        "kimi/k28-instant"
+      ],
+      "cases": [
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 60796,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "auto/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 162995,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 134001,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "forced/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 142567,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 153071,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 70827,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 57497,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "auto/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 122588,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 148021,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "forced/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 143444,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "multiple/stream",
+          "status": "failed",
+          "reason": "other",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 81803,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "kimi/k28-instant",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 66258,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "meta",
+      "models": [
+        "meta/auto",
+        "meta/think_fast",
+        "meta/think_hard"
+      ],
+      "cases": [
+        {
+          "model": "meta/auto",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 36558,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 61058,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "required/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 127610,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "forced/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 146134,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "multiple/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 129295,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 53826,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 51032,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "auto/stream",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 57058,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "required/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 125387,
+          "clientTools": [
+            "read_file"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "forced/stream",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 146301,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "multiple/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 2,
+          "http": [
+            200,
+            200
+          ],
+          "elapsedMs": 126731,
+          "clientTools": [
+            "read_file",
+            "echo_text"
+          ],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "meta/auto",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 56044,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "mistral",
+      "models": [
+        "mistral/fast"
+      ],
+      "cases": [
+        {
+          "model": "mistral/fast",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "mistral/fast",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "unavailable",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "perplexity",
+      "models": [
+        "perplexity/auto",
+        "perplexity/gpt6_1_sol",
+        "perplexity/gpt6_astra",
+        "perplexity/gemini4argon",
+        "perplexity/gemini38flash",
+        "perplexity/claude55sonnet",
+        "perplexity/claude55opus",
+        "perplexity/claudefable51",
+        "perplexity/grok47"
+      ],
+      "cases": [
+        {
+          "model": "perplexity/auto",
+          "scenario": "text/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 39777,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 51653,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "required/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 63377,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "forced/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 66100,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "multiple/json",
+          "status": "failed",
+          "reason": "http_502",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 63299,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "none/json",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 63145,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "text/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 50429,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "auto/stream",
+          "status": "failed",
+          "reason": "unexpected_answer",
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 54137,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "required/stream",
+          "status": "failed",
+          "reason": "other",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 61235,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "forced/stream",
+          "status": "failed",
+          "reason": "other",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 48337,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "multiple/stream",
+          "status": "failed",
+          "reason": "other",
+          "code": "invalid_tool_call",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 66808,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "perplexity/auto",
+          "scenario": "none/stream",
+          "status": "passed",
+          "reason": null,
+          "code": null,
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            200
+          ],
+          "elapsedMs": 55233,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "quillbot",
+      "models": [
+        "quillbot/chat"
+      ],
+      "cases": [
+        {
+          "model": "quillbot/chat",
+          "scenario": "text/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "auto/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "quillbot/chat",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "other",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "unavailable",
+      "unavailable": false,
+      "error": null
+    },
+    {
+      "provider": "qwen",
+      "models": [
+        "qwen/qwen3.7-plus",
+        "qwen/qwen3.8-max",
+        "qwen/qwen3.8-omni-flash",
+        "qwen/qwen3.7-max",
+        "qwen/qwen3.6-plus",
+        "qwen/qwen3.5-plus",
+        "qwen/qwen3.5-omni-plus"
+      ],
+      "cases": [
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "text/json",
+          "status": "failed",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "auto/json",
+          "status": "failed",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "required/json",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "forced/json",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "multiple/json",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "none/json",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "text/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "auto/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "required/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "forced/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "multiple/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        },
+        {
+          "model": "qwen/qwen3.7-plus",
+          "scenario": "none/stream",
+          "status": "blocked",
+          "reason": "timeout",
+          "code": null,
+          "attempted": false,
+          "requests": 0,
+          "http": [],
+          "elapsedMs": 0,
+          "clientTools": [],
+          "source": ".cache/zed-validation-rep2-2026-11-07.json"
+        }
+      ],
+      "state": "authenticated",
+      "unavailable": false,
+      "error": null
+    }
+  ],
+  "zedReplay": [
+    {
+      "model": "nvidia/nvidia/nemotron-3.5-lightning-30b-a3b",
+      "provider": "nvidia",
+      "status": "passed",
+      "reason": null,
+      "turns": 6,
+      "toolCalls": {
+        "list_directory": 1,
+        "create_directory": 1,
+        "write_file": 2,
+        "terminal": 1
+      },
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        200
+      ],
+      "filesWritten": [
+        "nvidia/sum.mjs",
+        "nvidia/sum.test.mjs"
+      ],
+      "agentTestRuns": 1,
+      "independentTest": {
+        "code": 0,
+        "pass": 6,
+        "fail": 0
+      },
+      "elapsedMs": 11188,
+      "finishedAt": "2026-11-08T00:12:49.038Z"
+    },
+    {
+      "model": "claude/auto",
+      "provider": "claude",
+      "status": "passed",
+      "reason": null,
+      "turns": 3,
+      "toolCalls": {
+        "write_file": 2,
+        "terminal": 1
+      },
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        200
+      ],
+      "filesWritten": [
+        "claude/sum.mjs",
+        "claude/sum.test.mjs"
+      ],
+      "agentTestRuns": 1,
+      "independentTest": {
+        "code": 0,
+        "pass": 3,
+        "fail": 0
+      },
+      "elapsedMs": 270295,
+      "finishedAt": "2026-11-08T00:21:22.053Z"
+    },
+    {
+      "model": "chatgpt/auto",
+      "provider": "chatgpt",
+      "status": "failed",
+      "reason": "http_502",
+      "turns": 0,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        502
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": null,
+      "elapsedMs": 88219,
+      "finishedAt": "2026-11-08T00:23:15.520Z"
+    },
+    {
+      "model": "ernie/smartMode",
+      "provider": "ernie",
+      "status": "failed",
+      "reason": "http_413",
+      "turns": 0,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        413
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": null,
+      "elapsedMs": 93024,
+      "finishedAt": "2026-11-08T00:43:36.855Z"
+    },
+    {
+      "model": "grok/fast",
+      "provider": "grok",
+      "status": "failed",
+      "reason": "files not created through tool calls; tests not run through the terminal tool; independent node --test failed",
+      "turns": 1,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        200
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": {
+        "code": -1,
+        "pass": 0,
+        "fail": 0
+      },
+      "elapsedMs": 117951,
+      "finishedAt": "2026-11-08T02:14:49.094Z"
+    },
+    {
+      "model": "meta/auto",
+      "provider": "meta",
+      "status": "failed",
+      "reason": "http_502",
+      "turns": 0,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        502
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": null,
+      "elapsedMs": 167827,
+      "finishedAt": "2026-11-08T02:17:39.297Z"
+    },
+    {
+      "model": "kimi/k28-instant",
+      "provider": "kimi",
+      "status": "failed",
+      "reason": "files not created through tool calls; tests not run through the terminal tool; independent node --test failed",
+      "turns": 1,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        200
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": {
+        "code": -1,
+        "pass": 0,
+        "fail": 0
+      },
+      "elapsedMs": 119663,
+      "finishedAt": "2026-11-08T02:25:55.044Z"
+    }
+  ]
+}

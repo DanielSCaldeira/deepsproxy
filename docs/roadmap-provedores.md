@@ -36,6 +36,10 @@ Status em 2026-11-06. Legenda:
 | QuillBot (QuillBot Chat) | quillbot.com | https://quillbot.com/ai-chat | `quillbot` | `quillbot/chat` | 🟡 | [quillbot-integration.md](quillbot-integration.md) |
 | Baidu (Ernie Bot) | baidu.com | https://wenxin.baidu.com | `ernie` | `ernie/smartMode`, `ernie/ERINE-5.1` | 🟡 | [ernie-integration.md](ernie-integration.md) |
 
+Uso com o Zed Agent: a [validação de 2026-11-07](validacao-integracoes.md) aprovou Claude e
+NVIDIA Nemotron. Os demais sites ainda falham com o prompt real do Zed ou dependem de
+pendências da conta. O status acima se refere à integração do site, não ao uso com o Zed.
+
 Observações sobre as URLs:
 
 - `copilot.microsoft.com/` redireciona para uma página de marketing; o proxy usa `/chats/new`.

@@ -82,6 +82,12 @@ direcionada. `DSP_TEST_CONTINUE_ON_502=1` permite sondar os demais modelos após
 erros 502 repetidos; bloqueios de autenticação e limites de uso continuam
 interrompendo os cenários dependentes.
 
+A [validação para o Zed Agent](docs/validacao-integracoes.md) registra quais provedores
+já criam arquivos e executam tarefas pelo Zed, os defeitos encontrados e como repetir
+os testes. A aprovação na matriz acima não basta: o Zed envia ~45 mil caracteres e 16
+ferramentas por turno. Por isso, `npx tsx scripts/zed-replay.ts <modelo>` reproduz esse
+protocolo com as ferramentas executadas numa pasta descartável.
+
 Para adicionar outro site ao proxy, siga o [guia de novos provedores](docs/guia-novos-provedores.md).
 O status de cada site planejado está no [roadmap de provedores](docs/roadmap-provedores.md).
 

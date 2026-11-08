@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { serializeOpenAIMessages, appendToolInstructions } from '../src/routes/serialization.ts';
 
 // Real gateway checks. Credentials stay in memory and never enter the report.
@@ -138,27 +139,34 @@ const tools = [
     type: 'object', properties: { text: { type: 'string', enum: ['ECHO_OK'] } }, required: ['text'], additionalProperties: false,
   } } },
 ];
-const names = (process.env.DSP_TEST_CASES || 'text,required,forced,multiple,none').split(',');
-assert.ok(names.every(name => ['text', 'required', 'forced', 'multiple', 'none'].includes(name)), 'Unknown test case');
+const names = (process.env.DSP_TEST_CASES || 'text,auto,required,forced,multiple,none').split(',');
+assert.ok(names.every(name => ['text', 'auto', 'required', 'forced', 'multiple', 'none'].includes(name)), 'Unknown test case');
 const blocked = (error: unknown) => error instanceof CallError && (
   [401, 403, 409, 429, 503].includes(error.http) || /login|auth|suspend|rate_limit|challenge|captcha|capacity|browser_unavailable/.test(error.code));
 
 async function scenario(provider: any, model: string, stream: boolean, name: string) {
   const test: any = { model, name: `${name}/${stream ? 'stream' : 'json'}`, status: 'running', calls: [] };
   provider.cases.push(test); await save();
+  const capability = provider.capabilities?.find((m: any) => m.id === model);
+  if (capability && name !== 'text' && (!capability.supported_parameters.includes('tools') ||
+      (name !== 'auto' && !capability.supported_parameters.includes('tool_choice')))) {
+    test.status = 'unsupported'; test.error = 'Recurso não anunciado no catálogo do modelo.';
+    await save(); return '';
+  }
   let fatal = '';
   try {
     const system = 'You are an IDE coding agent. Follow the requested output exactly. The IDE client executes tools; wait for its result before reporting file contents. Never guess file contents.';
     let prompt = '', choice: any;
     const expected = 'TESTE_PROXY_OK';
     if (name === 'text' || name === 'none') { prompt = `Responda apenas: ${expected}`; if (name === 'none') choice = 'none'; }
-    if (name === 'required' || name === 'forced') {
+    if (name === 'auto' || name === 'required' || name === 'forced') {
       prompt = `Use read_file to read ${fixturePath}. After the client returns its result, respond only with the exact value of IDE_PROTOCOL_VALUE.`;
-      choice = name === 'required' ? 'required' : { type: 'function', function: { name: 'read_file' } };
+      choice = name === 'auto' ? 'auto' : name === 'required' ? 'required' : { type: 'function', function: { name: 'read_file' } };
     }
-    if (name === 'multiple') { prompt = `Call both tools in this response: read_file with path ${fixturePath}, and echo_text with text ECHO_OK. Then stop and wait for the client results.`; choice = 'required'; }
+    if (name === 'multiple') { prompt = `Call both tools in this response: read_file with path ${fixturePath}, and echo_text with text ECHO_OK. Wait for the client results. After the client returns both results, respond only with the exact value of IDE_PROTOCOL_VALUE.`; choice = 'required'; }
     const messages: any[] = [{ role: 'system', content: system }, { role: 'user', content: prompt }];
     const body: any = { model, messages, stream, ...(name === 'text' ? {} : { tools, tool_choice: choice }) };
+    if (name === 'auto' && capability && !capability.supported_parameters.includes('tool_choice')) delete body.tool_choice;
     const result = await completion(body); test.calls.push(result.evidence);
     if (stream) assert.equal(result.done, true, 'SSE missing [DONE]');
     assert.doesNotMatch(result.content, /DSML|<\/?tool_call/, 'Internal tool markers leaked into content');
@@ -182,8 +190,10 @@ async function scenario(provider: any, model: string, stream: boolean, name: str
       }
       test.clientExecuted = results.map((r, i) => ({ name: result.calls[i].function.name, tool_call_id: r.tool_call_id, result: r.content }));
       // Required calls exercise the full history round trip in both response modes.
-      if (name === 'required') {
-        const continuation = { model, messages: [...messages, { role: 'assistant', content: result.content || null, tool_calls: result.calls }, ...results], tools, tool_choice: 'none', stream };
+      if (['auto', 'required', 'forced', 'multiple'].includes(name)) {
+        const assistant = !stream && result.evidence.response?.choices?.[0]?.message || { role: 'assistant', content: result.content || null, tool_calls: result.calls };
+        const continuation: any = { model, messages: [...messages, assistant, ...results], tools, tool_choice: 'none', stream };
+        if (capability && !capability.supported_parameters.includes('tool_choice')) { delete continuation.tool_choice; delete continuation.tools; }
         const final = await completion(continuation); test.calls.push(final.evidence);
         assert.equal(final.content.trim(), value); assert.equal(final.finishReason, 'stop'); assert.equal(final.calls.length, 0);
         if (stream) assert.equal(final.done, true);
@@ -212,6 +222,18 @@ async function scenario(provider: any, model: string, stream: boolean, name: str
   await save(); return fatal;
 }
 
+// Refuse stale resumes before entering the report-writing/cleanup block.
+{
+  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'src', 'scripts', 'package.json', 'package-lock.json'], { encoding: 'utf8' }).trim().split(/\r?\n/).sort();
+  const hash = createHash('sha256');
+  for (const file of files) { hash.update(file); hash.update(await readFile(file)); }
+  const fingerprint = hash.digest('hex');
+  if (process.env.DSP_TEST_RESUME === '1') assert.equal(report.fingerprint, fingerprint, 'Code changed or legacy report: start a new report instead of reusing stale approvals');
+  report.fingerprint = fingerprint;
+  report.revision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  report.runtime = { node: process.version, base };
+  try { report.runtime.images = execFileSync('docker', ['ps', '--format', '{{.Names}} {{.Image}}'], { encoding: 'utf8' }).trim().split(/\r?\n/); } catch { /* Docker is optional for an externally started lab. */ }
+}
 try {
   await authenticatePanel();
   if (!key) {
@@ -220,6 +242,14 @@ try {
     report.temporaryKeyId = temporaryKeyId;
   }
   const accounts = (await panel('/api/me/accounts')).accounts;
+  for (const id of ['deepseek','qwen','chatgpt','claude','perplexity','cohere','ernie','gemini','copilot','kimi','mistral','quillbot','meta','grok']) {
+    if (!accounts.some((a: any) => a.provider === id)) accounts.push({ provider: id, missingAccount: true });
+  }
+  const credentials = await panel('/api/me/provider-credentials');
+  for (const id of ['nvidia', 'openrouter']) {
+    const configured = credentials.credentials.some((entry: any) => entry.provider === id);
+    accounts.push({ provider: id, official: true, configured });
+  }
   const catalogResponse = await fetch(base + '/models', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30_000) });
   assert.equal(catalogResponse.status, 200);
   const currentCatalog = await catalogResponse.json();
@@ -228,7 +258,9 @@ try {
   report.catalogSnapshots.push({ timestamp: new Date().toISOString(), catalog: currentCatalog });
   for (const account of accounts) {
     if (selected && !selected.includes(account.provider)) continue;
-    if (!retryBlocked && report.providers.some((p: any) => p.provider === account.provider && p.finishedAt)) continue;
+    if (!retryBlocked && report.providers.some((p: any) => p.provider === account.provider && p.finishedAt &&
+      (p.error || p.models.filter((m: string) => !selectedModels || selectedModels.includes(m)).every((m: string) =>
+        responseModes.every(stream => names.every(name => p.cases.some((c: any) => c.model === m && c.name === `${name}/${stream ? 'stream' : 'json'}` && c.status !== 'running'))))))) continue;
     const previous = report.providers.find((p: any) => p.provider === account.provider);
     const provider: any = previous || { provider: account.provider, initialState: account.accountState, models: account.models || [], cases: [] };
     provider.previousCases ||= [];
@@ -237,6 +269,13 @@ try {
     if (!previous) report.providers.push(provider);
     log(`Preparing ${account.provider}`); await save();
     try {
+      if (account.missingAccount) throw new Error('Conta não configurada no laboratório.');
+      if (account.official) {
+        if (!account.configured) throw new Error('Credencial não configurada.');
+        const catalog = await panel(`/api/me/provider-credentials/${account.provider}/models`, {});
+        provider.state = 'authenticated'; provider.models = catalog.models.map((m: any) => m.id);
+        provider.capabilities = catalog.models;
+      } else {
       if (account.loginActive || account.busy) throw new Error('Conta ocupada ou login em andamento; sessão preservada.');
       const operation = await panel(`/api/me/accounts/${account.provider}/connection/recover`, {});
       const deadline = Date.now() + 240_000;
@@ -250,6 +289,7 @@ try {
       const status = await panel(`/api/me/accounts/${account.provider}/status`);
       provider.state = status.accountState; provider.models = status.models || [];
       provider.liveStatus = status;
+      }
       log(`${account.provider}: state=${provider.state}, models=${provider.models.join(',') || '(none)'}`);
       let blocker = provider.state === 'authenticated' ? '' : `Sessão indisponível: ${provider.state}`;
       if (!provider.models.length) throw new Error(blocker || 'Nenhum modelo anunciado para esta conta.');
@@ -270,7 +310,7 @@ try {
       }
     } catch (error) { provider.error = error instanceof Error ? error.message : String(error); log(`${account.provider}: ${provider.error}`); }
     finally {
-      if (!account.loginActive && !account.busy) {
+      if (!account.missingAccount && !account.official && !account.loginActive && !account.busy) {
         try { provider.browserReleased = (await panel(`/api/me/accounts/${account.provider}/connection/sleep`, {})).released; }
         catch (error) { provider.cleanupError = error instanceof Error ? error.message : String(error); }
       }
