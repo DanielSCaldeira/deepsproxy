@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-08T02:26:58.407Z",
+  "generatedAt": "2026-11-08T03:57:26.651Z",
   "sources": [
     {
       "path": ".cache/zed-validation-free-2026-11-07.json",
@@ -47,8 +47,26 @@
       "temporaryKeyRevoked": true
     },
     {
+      "path": ".cache/zed-validation-chatgpt-fix-2026-11-08.json",
+      "sha256": "1aba2121503ddeba1fca310f7456e5b88c4fef1e6a48faa9884ab23f85228359",
+      "startedAt": "2026-11-08T03:25:07.548Z",
+      "finishedAt": "2026-11-08T03:32:57.564Z",
+      "revision": "97e1d8a7539273d37b1ce371073b624e24809010",
+      "fingerprint": "8159170985896c7abccad1f7531ed116fee488ff7e1cfe8db3c0e3167e1d2477",
+      "temporaryKeyRevoked": true
+    },
+    {
+      "path": ".cache/zed-validation-chatgpt-fix2-2026-11-08.json",
+      "sha256": "26e90eca364b0d35966b6e382206bdd8360758cf4b1d3dab45f4d658ccb1988d",
+      "startedAt": "2026-11-08T03:40:32.660Z",
+      "finishedAt": "2026-11-08T03:51:01.868Z",
+      "revision": "97e1d8a7539273d37b1ce371073b624e24809010",
+      "fingerprint": "8159170985896c7abccad1f7531ed116fee488ff7e1cfe8db3c0e3167e1d2477",
+      "temporaryKeyRevoked": true
+    },
+    {
       "path": ".cache/zed-replay/summary.json",
-      "sha256": "d6b29dae119a3f5c4e7e05b9d752e03c96c221dcededcd1b8107868881ca4a32",
+      "sha256": "2af2f91aebd46b26c543297113ab5dfa0d31eb6388a2581d2346edc932c20af3",
       "kind": "zed-replay"
     }
   ],
@@ -1576,9 +1594,9 @@
           "http": [
             200
           ],
-          "elapsedMs": 46791,
+          "elapsedMs": 88181,
           "clientTools": [],
-          "source": ".cache/zed-validation-2026-11-07.json"
+          "source": ".cache/zed-validation-chatgpt-fix2-2026-11-08.json"
         },
         {
           "model": "chatgpt/auto",
@@ -1592,11 +1610,11 @@
             200,
             200
           ],
-          "elapsedMs": 149995,
+          "elapsedMs": 144480,
           "clientTools": [
             "read_file"
           ],
-          "source": ".cache/zed-validation-2026-11-07.json"
+          "source": ".cache/zed-validation-chatgpt-fix2-2026-11-08.json"
         },
         {
           "model": "chatgpt/auto",
@@ -1622,16 +1640,17 @@
           "reason": null,
           "code": null,
           "attempted": true,
-          "requests": 1,
+          "requests": 2,
           "http": [
+            200,
             200
           ],
-          "elapsedMs": 69732,
+          "elapsedMs": 231638,
           "clientTools": [
             "read_file",
             "echo_text"
           ],
-          "source": ".cache/zed-validation-2026-11-07.json"
+          "source": ".cache/zed-validation-chatgpt-fix2-2026-11-08.json"
         },
         {
           "model": "chatgpt/auto",
@@ -1967,15 +1986,17 @@
         {
           "model": "cohere/auto",
           "scenario": "forced/json",
-          "status": "blocked",
+          "status": "failed",
           "reason": "http_502",
-          "code": null,
-          "attempted": false,
-          "requests": 0,
-          "http": [],
-          "elapsedMs": 0,
+          "code": "upstream_error",
+          "attempted": true,
+          "requests": 1,
+          "http": [
+            502
+          ],
+          "elapsedMs": 57998,
           "clientTools": [],
-          "source": ".cache/zed-validation-rep-2026-11-07.json"
+          "source": ".cache/zed-validation-2026-11-07.json"
         },
         {
           "model": "cohere/auto",
@@ -4075,7 +4096,7 @@
           "model": "kimi/k28-instant",
           "scenario": "multiple/stream",
           "status": "failed",
-          "reason": "other",
+          "reason": "invalid_tool_call",
           "code": "invalid_tool_call",
           "attempted": true,
           "requests": 1,
@@ -4618,7 +4639,7 @@
           "model": "perplexity/auto",
           "scenario": "required/stream",
           "status": "failed",
-          "reason": "other",
+          "reason": "invalid_tool_call",
           "code": "invalid_tool_call",
           "attempted": true,
           "requests": 1,
@@ -4633,7 +4654,7 @@
           "model": "perplexity/auto",
           "scenario": "forced/stream",
           "status": "failed",
-          "reason": "other",
+          "reason": "invalid_tool_call",
           "code": "invalid_tool_call",
           "attempted": true,
           "requests": 1,
@@ -4648,7 +4669,7 @@
           "model": "perplexity/auto",
           "scenario": "multiple/stream",
           "status": "failed",
-          "reason": "other",
+          "reason": "invalid_tool_call",
           "code": "invalid_tool_call",
           "attempted": true,
           "requests": 1,
@@ -5080,24 +5101,6 @@
       "finishedAt": "2026-11-08T00:21:22.053Z"
     },
     {
-      "model": "chatgpt/auto",
-      "provider": "chatgpt",
-      "status": "failed",
-      "reason": "http_502",
-      "turns": 0,
-      "toolCalls": {},
-      "invalidArguments": 0,
-      "toolErrors": 0,
-      "http": [
-        502
-      ],
-      "filesWritten": [],
-      "agentTestRuns": 0,
-      "independentTest": null,
-      "elapsedMs": 88219,
-      "finishedAt": "2026-11-08T00:23:15.520Z"
-    },
-    {
       "model": "ernie/smartMode",
       "provider": "ernie",
       "status": "failed",
@@ -5176,6 +5179,28 @@
       },
       "elapsedMs": 119663,
       "finishedAt": "2026-11-08T02:25:55.044Z"
+    },
+    {
+      "model": "chatgpt/auto",
+      "provider": "chatgpt",
+      "status": "failed",
+      "reason": "files not created through tool calls; tests not run through the terminal tool; independent node --test failed",
+      "turns": 1,
+      "toolCalls": {},
+      "invalidArguments": 0,
+      "toolErrors": 0,
+      "http": [
+        200
+      ],
+      "filesWritten": [],
+      "agentTestRuns": 0,
+      "independentTest": {
+        "code": -1,
+        "pass": 0,
+        "fail": 0
+      },
+      "elapsedMs": 108005,
+      "finishedAt": "2026-11-08T03:24:37.548Z"
     }
   ]
 }

@@ -17,6 +17,7 @@ function category(error: unknown) {
   if (http) return `http_${http[1]}`;
   if (/não anunciado/i.test(text)) return 'not_advertised';
   if (/markers leaked/i.test(text)) return 'tool_markers_leaked';
+  if (/invalid or incomplete tool call|did not follow tool_choice/i.test(text)) return 'invalid_tool_call';
   if (/\[DONE\]/.test(text)) return 'sse_incomplete';
   if (/strictly equal|deepStrictEqual/.test(text)) return 'unexpected_answer';
   if (/timeout|aborted/i.test(text)) return 'timeout';
@@ -38,10 +39,13 @@ for (const path of paths) {
     provider.unavailable = Boolean(p.error);
     provider.error = p.error ? String(p.error).split('\n')[0].slice(0, 160) : null;
     for (const c of p.cases || []) {
+      const key = c.model + '/' + c.name;
+      const attempted = c.attempted !== false && (c.calls?.length || 0) > 0;
+      // A scenario skipped after earlier failures says nothing new; keep the last executed result.
+      if (!attempted && provider.cases.get(key)?.attempted) continue;
       // Deliberate allowlist: never publish request bodies, provider status payloads or response text.
-      provider.cases.set(c.model + '/' + c.name, { model: c.model, scenario: c.name, status: c.status,
-        reason: c.status === 'passed' ? null : category(c.error), code: c.code || null,
-        attempted: c.attempted !== false && (c.calls?.length || 0) > 0,
+      provider.cases.set(key, { model: c.model, scenario: c.name, status: c.status,
+        reason: c.status === 'passed' ? null : category(c.error), code: c.code || null, attempted,
         requests: (c.calls || []).length, http: (c.calls || []).map((call: any) => call.http),
         elapsedMs: (c.calls || []).reduce((n: number, call: any) => n + (call.elapsedMs || 0), 0),
         clientTools: (c.clientExecuted || []).map((t: any) => t.name), source: path });

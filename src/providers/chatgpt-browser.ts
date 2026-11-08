@@ -15,12 +15,25 @@ export function installChatGPTCapture(): void {
         /^\/backend-api\/(?:f\/)?conversation$/.test(url.pathname);
       const body = candidate ? (typeof init?.body === 'string' ? JSON.parse(init.body) :
         input instanceof Request ? await input.clone().json().catch(() => null) : null) : null;
+      // Compare only for correlation; never rewrite the submitted text. Rich editors normalize
+      // blank paragraphs and non-breaking spaces. The composer also rewrites Markdown on submit
+      // (observed 2026-11-07: "## Title" is sent as "\## Title" and "(https://x)" as
+      // "([https://x](https://x))"), so long prompts match when every letter and digit of the
+      // prompt appears, in order, in a message of comparable length.
+      const target = capture?.prompt?.replace(/\s+/g, ' ').trim();
+      const skeleton = capture?.prompt?.replace(/[^\p{L}\p{N}]/gu, '') ?? '';
       matching = candidate &&
         Array.isArray(body?.messages) && body.messages.some((m: any) => m?.author?.role === 'user' &&
-          m?.content?.parts?.some((part: unknown) => typeof part === 'string' &&
-            // Rich editors normalize blank paragraphs and non-breaking spaces.
-            // Compare only for correlation; never rewrite the submitted text.
-            part.replace(/\s+/g, ' ').trim() === capture.prompt.replace(/\s+/g, ' ').trim()));
+          m?.content?.parts?.some((part: unknown) => {
+            if (typeof part !== 'string') return false;
+            if (part.replace(/\s+/g, ' ').trim() === target) return true;
+            if (skeleton.length < 32) return false;
+            const sent = part.replace(/[^\p{L}\p{N}]/gu, '');
+            if (sent.length > skeleton.length * 1.25 + 200) return false;
+            let found = 0;
+            for (let i = 0; i < sent.length && found < skeleton.length; i++) if (sent[i] === skeleton[found]) found++;
+            return found === skeleton.length;
+          }));
       if (matching) {
         capture.claimed = true;
         // Specific model selections must be honored by the frontend request.

@@ -1,5 +1,6 @@
-import type { BrowserContext, Page } from 'playwright';
+import type { BrowserContext, Locator, Page } from 'playwright';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createLogger } from '../utils/logger.ts';
 import { BROWSER_LOCALE, nativeChromium, createBrowserPage, getBrowserChannel, focusChatEditor, browserNeedsVerification } from '../services/browser.ts';
 import { createSessionStore, getProfileDirectory } from '../services/session-store.ts';
 import { InteractiveBrowser } from '../services/interactive-browser.ts';
@@ -17,6 +18,43 @@ const EDITOR = '#prompt-textarea:visible, form[data-chatgpt-composer] [contented
 const MODEL_BUTTON = '[data-testid="model-switcher-dropdown-button"], [data-testid="model-selector"]';
 const SEND = '[data-testid="send-button"]:visible, button[aria-label="Send prompt"]:visible, button[aria-label="Enviar prompt"]:visible, form[data-chatgpt-composer] button[type="submit"][aria-label="Enviar"]:visible, form[data-chatgpt-composer] button[type="submit"][aria-label="Send"]:visible';
 const STOP = '[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="Parar de gerar"]';
+const log = createLogger('chatgpt');
+
+/** Compares editor and prompt text the way the capture correlates them: whitespace and
+ * the zero-width markers rich-text editors keep around text nodes are ignored. */
+const INVISIBLE = new RegExp('[' + String.fromCharCode(0x200b) + '-' + String.fromCharCode(0x200d, 0x2060, 0xfeff) + ']', 'g');
+const comparable = (text: string) => text.replace(INVISIBLE, '').replace(/\s+/g, '');
+
+/** Remove button of the chip the composer shows when a long paste becomes a text file. */
+const PASTED_TEXT_CHIP = 'form button[aria-label*="texto colado" i], form button[aria-label*="pasted text" i]';
+
+/** Observed 2026-11-07: typing multi-line text with Playwright's fill makes the composer
+ * handle every line separately (8 000 characters in ~100 lines took ~27 s and hit the
+ * 10 s timeout), and every IDE agent request is multi-line. Short text is pasted in one
+ * transaction ('paste'). Long pastes become a "pasted text" file and leave the box empty;
+ * the model then treats the prompt as a reference document and refuses the IDE tools, so
+ * the file is removed and the prompt is typed into the message instead ('fill'), with a
+ * timeout that grows with the number of lines. */
+export async function fillChatGPTEditor(editor: Locator, prompt: string): Promise<'paste' | 'fill'> {
+  await editor.evaluate((element, text) => {
+    (element as HTMLElement).focus();
+    getSelection()?.selectAllChildren(element);
+    const data = new DataTransfer(); data.setData('text/plain', text);
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, prompt);
+  const pasted = comparable(await editor.innerText());
+  if (pasted === comparable(prompt)) return 'paste';
+  const chips = editor.page().locator(PASTED_TEXT_CHIP);
+  if (!pasted) await chips.first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+  // Never send a partial paste or a pasted-text file together with the typed prompt.
+  for (let attempt = 0; await chips.count(); attempt++) {
+    if (attempt === 5) throw new Error('Pasted-text attachment could not be removed');
+    await chips.first().click({ timeout: 5000 });
+  }
+  const lines = prompt.split('\n').length;
+  await editor.fill(prompt, { timeout: Math.min(180_000, 10_000 + lines * 300) });
+  return 'fill';
+}
 
 /** One account per worker. The website prepares and sends its own requests. */
 export class ChatGPTProvider implements ProviderAdapter {
@@ -261,7 +299,9 @@ export class ChatGPTProvider implements ProviderAdapter {
         await page!.evaluate(({ prompt, model }) => {
           (globalThis as any).__proxyChatGPT = { prompt, model, chunks: [], bytes: 0, claimed: false, done: false };
         }, { prompt, model: model.slice('chatgpt/'.length) });
-        interaction = 'filling editor'; await editor.fill(prompt, { timeout: 10_000 });
+        interaction = 'filling editor';
+        const method = await fillChatGPTEditor(editor, prompt);
+        log.info('Prompt entered', { method, promptChars: prompt.length });
         controller.signal.throwIfAborted();
         interaction = 'clicking send';
         // The site navigates to /c/... after submission. Capture owns completion;
@@ -308,6 +348,8 @@ export class ChatGPTProvider implements ProviderAdapter {
       this.rememberError(error); await cleanup();
       if (controller.signal.aborted) throw controller.signal.reason;
       if (error instanceof UpstreamError) throw error;
+      // Keep the cause in the worker log: Playwright messages carry selectors and timings, not prompt text.
+      log.warn('ChatGPT interaction failed', { interaction, cause: error instanceof Error ? error.message.split('\n')[0].slice(0, 300) : String(error).slice(0, 300) });
       throw new UpstreamError(`ChatGPT web interaction failed during ${interaction}; verify the browser before retrying.`, 502);
     }
   }

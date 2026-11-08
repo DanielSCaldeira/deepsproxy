@@ -20,7 +20,7 @@ Legenda: ✅ aprovado para o Zed · 🟡 funciona com ressalvas · ❌ não usar
 | Kimi — `kimi/k28-instant` | ❌ | 11/12 | Com o prompt do Zed, executou a tarefa no **sandbox do próprio site** (`/mnt/agents/output/`) em vez de devolver tool calls; nada foi criado no workspace e vazaram marcadores `<REF>` (ver achado 2). |
 | Grok — `grok/fast` | ❌ | 3 ✅ antes de travar | Com o prompt do Zed, respondeu "criado e verificado", com saída de testes, **sem nenhuma tool call**; nenhum arquivo existe. A saída parece vir da execução de código do próprio grok.com (ver achado 2). |
 | Meta — `meta/auto` | ❌ | 8/12 | Com o prompt do Zed, o site não iniciou a resposta (502), o mesmo sintoma de `forced` na API (ver achado 3). |
-| ChatGPT — `chatgpt/auto` | ❌ | 10/10 | Passa na API com prompts curtos, mas **falha com prompts multilinha**, que é o caso de toda requisição do Zed (ver achado 1). |
+| ChatGPT — `chatgpt/auto` | ❌ | 10/10 | O transporte de prompts multilinha foi corrigido (o pedido do Zed agora entra e o modelo chega a chamar tools), mas o modelo **oscila entre usar as tools e dizer que não tem acesso a elas** (ver achado 1). |
 | Cohere — `command-a-03-2025`, `c4ai-aya-vision-32b`, `command-a-translate-08-2025` | não testado | 10/10 | 🟡 Esses três passam na API; `cohere/auto` e `command-a-reasoning` dão 502 com tools; `aya-expanse` e `command-r` prefixam a resposta (`**Final Answer:**`). |
 | Ernie — `ernie/smartMode` | ❌ | 10/12 | O site limita a entrada a 20 000 caracteres; a primeira requisição do Zed tem ~45 000. Serve para clientes com prompts menores. |
 | Perplexity — `perplexity/auto` | não testado | 4/12 | ❌ Só texto: o modelo se recusa a usar as tools ou devolve tool call inválida. |
@@ -74,13 +74,28 @@ Três camadas, da mais barata à mais fiel:
 
 ## Achados que pedem correção no proxy
 
-1. **ChatGPT: prompt multilinha quebra o preenchimento do editor.** `editor.fill()` falha
-   ("interaction failed during filling editor") com qualquer texto de muitas linhas: 8 mil
-   caracteres em ~107 linhas falham, enquanto 45 mil caracteres numa linha só passam. O smoke
-   não pegava porque usa prompts curtos. Toda requisição do Zed é multilinha (system prompt,
-   código, resultados de tools). O mesmo método funciona no Claude. Próximo passo: capturar o
-   erro original do Playwright (hoje engolido pelo `catch` genérico) e trocar a forma de
-   inserir o texto (por exemplo, `ClipboardEvent` de colagem, como no adaptador do Copilot).
+1. **ChatGPT: prompt multilinha quebrava o preenchimento do editor. Transporte corrigido em
+   2026-11-08; o comportamento do modelo continua instável.**
+   - *Causa:* `editor.fill()` processa o texto linha a linha (8 mil caracteres em ~107 linhas
+     levavam ~27 s, e o timeout é de 10 s). O smoke não pegava porque usa prompts curtos.
+   - *O que o site faz com textos longos:* colagens grandes viram um anexo "Texto colado.txt"
+     (o modelo passa a tratar o prompt como documento de referência e recusa as tools). O
+     texto digitado é reescrito no envio: markdown escapado (`## Título` → `\## Título`) e
+     URLs viram links (`(https://x)` → `([https://x](https://x))`). O modelo recebe essa
+     versão, o que pode afetar código com URLs ou markdown.
+   - *Correção* (`src/providers/chatgpt.ts`, `chatgpt-browser.ts`): cola prompts curtos de uma
+     vez; quando a colagem vira anexo, remove o anexo e digita com timeout proporcional às
+     linhas; a captura reconhece o texto reescrito (todas as letras e dígitos do prompt, em
+     ordem, numa mensagem de tamanho comparável); a causa original das falhas de interação
+     passa a ir para o log do worker.
+   - *Validação:* 8 mil e 45 mil caracteres multilinha passam; o smoke curto passa 3/3
+     (`text`, `required`, `multiple`); com o prompt real do Zed o pedido é aceito e o modelo
+     já emitiu uma tool call válida (`list_directory`).
+   - *Pendente:* com o system prompt do Zed, o ChatGPT web oscila entre usar as tools e
+     responder "não tenho acesso às ferramentas do Zed nesta sessão", e às vezes para depois
+     da primeira tool. Um resíduo `<escape` apareceu uma vez antes de uma tool call. É
+     comportamento do modelo diante de instruções de sistema vindas do usuário; o Claude web
+     segue o mesmo protocolo sem hesitar.
 2. **Kimi e Grok: as ferramentas nativas do site sequestram a execução.** Com o prompt do
    Zed, o Kimi rodou a tarefa no sandbox do próprio site (`/mnt/agents/output/`), e o Grok
    respondeu com uma saída de testes plausível, sem nenhuma tool call. Em ambos, nada foi
@@ -129,7 +144,7 @@ andamento foram perdidas. O ambiente foi levantado de novo com
 `docker compose --env-file .cache/proxy-ia-live.env -f compose.live.yml up -d --wait`,
 sem reconstruir imagens, e as rodadas foram refeitas. Os resultados de ChatGPT, Claude e
 Cohere na API são de antes da queda; os demais, de depois. A imagem do worker em uso
-(`deepsproxy-worker:live`, 2026-11-07 00:24) contém as correções do commit `473f027`.
+(`deepsproxy-worker:live`, 2026-11-07 00:24) continha as correções do commit `473f027`. Para a correção do ChatGPT, a imagem foi reconstruída em 2026-11-08 com `docker compose --env-file .cache/proxy-ia-live.env -f compose.live.yml --profile images build worker-image`; os demais provedores foram testados com a imagem anterior.
 
 ## Quando é preciso retestar
 
@@ -162,7 +177,7 @@ npx tsx scripts/zed-replay.ts claude/auto kimi/k28-instant
 # Regenera a matriz pública (fontes da mais antiga para a mais nova)
 npx tsx scripts/report-integrations.ts .cache/zed-validation-free-2026-11-07.json \
   .cache/zed-validation-nvidia-fixed-2026-11-07.json .cache/zed-validation-2026-11-07.json \
-  .cache/zed-validation-rep-2026-11-07.json .cache/zed-validation-rep2-2026-11-07.json
+  .cache/zed-validation-rep-2026-11-07.json .cache/zed-validation-rep2-2026-11-07.json \n  .cache/zed-validation-chatgpt-fix-2026-11-08.json .cache/zed-validation-chatgpt-fix2-2026-11-08.json
 ```
 
 Para refazer a captura do Zed real: rode `npx tsx scripts/zed-validation-bridge.ts`, aponte

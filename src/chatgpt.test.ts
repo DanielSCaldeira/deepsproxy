@@ -8,7 +8,7 @@ import { chatGPTError, chatGPTModels, parseChatGPTStream } from './providers/cha
 import { installChatGPTCapture } from './providers/chatgpt-browser.ts';
 import { providerId, providerIdForModel } from './providers/catalog.ts';
 import { interactiveWorkerArguments } from './services/interactive-browser.ts';
-import { ChatGPTProvider } from './providers/chatgpt.ts';
+import { ChatGPTProvider, fillChatGPTEditor } from './providers/chatgpt.ts';
 import { getProvider } from './providers/registry.ts';
 import { apiError } from './utils/api-error.ts';
 import { GenerationGuard, UpstreamError } from './services/generation-guard.ts';
@@ -270,4 +270,85 @@ test('ChatGPT early manual confirmation reopens login and successful confirmatio
     if (previous === undefined) delete process.env.PROVIDER_PROFILE_DIR; else process.env.PROVIDER_PROFILE_DIR = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('ChatGPT editor receives multi-line prompts by paste and falls back to typing', async () => {
+  const prompt = Array.from({ length: 120 }, (_, i) => `Linha ${i + 1}: contexto do agente da IDE.`).join('\n');
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    // Rich editor with its own paste handling (as ProseMirror): one transaction, one paragraph per line.
+    await page.setContent(`<div id="editor" contenteditable="true"></div><script>{
+      window.typed = 0;
+      const editor = document.getElementById('editor');
+      editor.addEventListener('beforeinput', event => { if (event.inputType === 'insertText') window.typed++; });
+      editor.addEventListener('paste', event => {
+        event.preventDefault();
+        editor.replaceChildren(...event.clipboardData.getData('text/plain').split(String.fromCharCode(10)).map(line => {
+          const p = document.createElement('p'); p.textContent = line; return p; }));
+      });}</script>`);
+    assert.equal(await fillChatGPTEditor(page.locator('#editor'), prompt), 'paste');
+    assert.equal((await page.locator('#editor').innerText()).replace(/\s+/g, ''), prompt.replace(/\s+/g, ''));
+    assert.equal(await page.evaluate(() => (window as any).typed), 0, 'paste must not type the prompt');
+
+    // Plain editable without a paste handler: the synthetic paste inserts nothing, so the text is typed.
+    await page.setContent('<div id="editor" contenteditable="true"></div>');
+    assert.equal(await fillChatGPTEditor(page.locator('#editor'), prompt), 'fill');
+    assert.equal((await page.locator('#editor').innerText()).replace(/\s+/g, ''), prompt.replace(/\s+/g, ''));
+
+    // A long paste becomes a pasted-text file and leaves the box empty. The model would read it
+    // as a reference document, so the file is removed and the prompt goes into the message.
+    await page.setContent(`<form><div id="chips"></div><div id="editor" contenteditable="true"></div></form><script>{
+      const editor = document.getElementById('editor');
+      editor.addEventListener('paste', event => {
+        event.preventDefault();
+        setTimeout(() => {
+          const chip = document.createElement('button'); chip.type = 'button'; chip.setAttribute('aria-label', 'Remover anexo de texto colado');
+          chip.onclick = () => chip.remove(); document.getElementById('chips').append(chip);
+        }, 200);
+      });}</script>`);
+    assert.equal(await fillChatGPTEditor(page.locator('#editor'), prompt), 'fill');
+    assert.equal(await page.locator('#chips button').count(), 0, 'the prompt must not be sent twice');
+    assert.equal((await page.locator('#editor').innerText()).replace(/\s+/g, ''), prompt.replace(/\s+/g, ''));
+
+    // A partial paste plus a stray file: remove the file and type the whole prompt instead.
+    await page.setContent(`<form><div id="chips"></div><div id="editor" contenteditable="true"></div></form><script>{
+      const editor = document.getElementById('editor');
+      editor.addEventListener('paste', event => {
+        event.preventDefault(); editor.textContent = 'parte';
+        const chip = document.createElement('button'); chip.type = 'button'; chip.setAttribute('aria-label', 'Remove pasted text');
+        chip.onclick = () => chip.remove(); document.getElementById('chips').append(chip);
+      });}</script>`);
+    assert.equal(await fillChatGPTEditor(page.locator('#editor'), prompt), 'fill');
+    assert.equal(await page.locator('#chips button').count(), 0);
+    assert.equal((await page.locator('#editor').innerText()).replace(/\s+/g, ''), prompt.replace(/\s+/g, ''));
+  } finally { await browser.close(); }
+});
+
+test('ChatGPT capture correlates the Markdown-escaped text the composer submits', async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.route('https://chatgpt.com/**', route => new URL(route.request().url()).pathname.startsWith('/backend-api/') ?
+      route.fulfill({ contentType: 'text/event-stream', body: 'data: [DONE]\n\n' }) : route.fulfill({ contentType: 'text/html', body: '<p>Chat</p>' }));
+    await page.addInitScript(installChatGPTCapture);
+    await page.goto('https://chatgpt.com/');
+    const send = (capture: Record<string, unknown>, message: unknown) => page.evaluate(async ({ capture, message }) => {
+      (globalThis as any).__proxyChatGPT = { model: 'auto', chunks: [], bytes: 0, claimed: false, done: false, ...capture };
+      await (await fetch('/backend-api/f/conversation', { method: 'POST', body: JSON.stringify({ model: 'auto', messages: [message] }) })).text();
+      return (globalThis as any).__proxyChatGPT.claimed as boolean;
+    }, { capture, message });
+    const prompt = '## Communication\n- Default to a concise tone.\n* use `code`_names_';
+    const escaped = '\\## Communication\n\\- Default to a concise tone.\n\\* use \\`code\\`\\_names\\_';
+    assert.equal(await send({ prompt }, { author: { role: 'user' }, content: { parts: [escaped] } }), true);
+    assert.equal(await send({ prompt }, { author: { role: 'user' }, content: { parts: ['Another prompt'] } }), false);
+    const linked = 'Image syntax: `![alt](https://example.com/a.png)` keeps working in the IDE agent.';
+    assert.equal(await send({ prompt: linked }, { author: { role: 'user' },
+      content: { parts: ['Image syntax: `!\\[alt\\]([https://example.com/a.png](https://example.com/a.png))` keeps working in the IDE agent.'] } }), true);
+    assert.equal(await send({ prompt: linked }, { author: { role: 'user' },
+      content: { parts: ['Image syntax: `![alt](https://example.com/a.png)` keeps working in the agent.'] } }), false, 'a missing word is another prompt');
+    assert.equal(await send({ prompt: 'ok' }, { author: { role: 'user' }, content: { parts: ['\\ok'] } }), false, 'short prompts need an exact match');
+    assert.equal(await send({ prompt }, { author: { role: 'user' }, content: { parts: [''] },
+      metadata: { attachments: [{ name: 'Texto colado.txt', mime_type: 'text/plain', size: prompt.length }] } }), false, 'a pasted-text file is not the prompt message');
+  } finally { await browser.close(); }
 });
